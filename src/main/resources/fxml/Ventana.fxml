@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.CheckBox?>
+<?import javafx.scene.control.ColorPicker?>
+<?import javafx.scene.control.ComboBox?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ProgressIndicator?>
+<?import javafx.scene.control.TextArea?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.layout.AnchorPane?>
+<?import javafx.scene.layout.Pane?>
+<?import javafx.scene.paint.Color?>
+<?import javafx.scene.shape.Rectangle?>
+<?import javafx.scene.text.Font?>
+
+<AnchorPane prefHeight="824.0" prefWidth="902.0" xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="fx.VentanaController">
+   <children>
+      <Label layoutX="15.0" layoutY="4.0" prefHeight="46.0" prefWidth="130.0" text="TIPO DE ENVIO:" textAlignment="CENTER" underline="true" wrapText="true">
+         <font>
+            <Font name="System Bold" size="15.0" />
+         </font>
+      </Label>
+      <TextField fx:id="tipoEnvioText" alignment="TOP_LEFT" layoutX="159.0" layoutY="11.0" prefHeight="31.0" prefWidth="722.0">
+         <font>
+            <Font size="15.0" />
+         </font>
+      </TextField>
+      <ProgressIndicator fx:id="progressIndicator" layoutX="484.0" layoutY="194.0" visible="false" />
+      <Label layoutX="14.0" layoutY="50.0" prefHeight="46.0" prefWidth="130.0" text="Nº TRACKING:" textAlignment="CENTER" underline="true" wrapText="true">
+         <font>
+            <Font name="System Bold" size="15.0" />
+         </font>
+      </Label>
+      <TextField fx:id="trackingText" alignment="TOP_LEFT" layoutX="158.0" layoutY="57.0" prefHeight="31.0" prefWidth="722.0">
+         <font>
+            <Font size="15.0" />
+         </font>
+      </TextField>
+      <Label layoutX="15.0" layoutY="97.0" prefHeight="46.0" prefWidth="129.0" text="CLIENTE:" textAlignment="CENTER" underline="true" wrapText="true">
+         <font>
+            <Font name="System Bold" size="15.0" />
+         </font>
+      </Label>
+      <TextField fx:id="clienteText" alignment="TOP_LEFT" layoutX="159.0" layoutY="103.0" prefHeight="31.0" prefWidth="722.0">
+         <font>
+            <Font size="15.0" />
+         </font>
+      </TextField>
+      <Label layoutX="15.0" layoutY="140.0" prefHeight="46.0" prefWidth="129.0" text="DOMICILIO:" textAlignment="CENTER" underline="true" wrapText="true">
+         <font>
+            <Font name="System Bold" size="15.0" />
+         </font>
+      </Label>
+      <TextField fx:id="domicilioText" alignment="TOP_LEFT" layoutX="158.0" layoutY="148.0" prefHeight="31.0" prefWidth="722.0">
+         <font>
+            <Font size="15.0" />
+         </font>
+      </TextField>
+      <Label layoutX="14.0" layoutY="186.0" prefHeight="46.0" prefWidth="130.0" text="LOCALIDAD:" textAlignment="CENTER" underline="true" wrapText="true">
+         <font>
+            <Font name="System Bold" size="15.0" />
+         </font>
+      </Label>
+      <TextField fx:id="localidadText" alignment="TOP_LEFT" layoutX="159.0" layoutY="194.0" prefHeight="31.0" prefWidth="722.0">
+         <font>
+            <Font size="15.0" />
+         </font>
+      </TextField>
+      <Label layoutX="15.0" layoutY="383.0" prefHeight="46.0" prefWidth="129.0" text="TELEFONO:" textAlignment="CENTER" underline="true" wrapText="true">
+         <font>
+            <Font name="System Bold" size="15.0" />
+         </font>
+      </Label>
+      <Label layoutX="15.0" layoutY="232.0" prefHeight="46.0" prefWidth="130.0" text="CP:" textAlignment="CENTER" underline="true" wrapText="true">
+         <font>
+            <Font name="System Bold" size="15.0" />
+         </font>
+      </Label>
+      <TextField fx:id="cpText" alignment="TOP_LEFT" layoutX="158.0" layoutY="240.0" prefHeight="31.0" prefWidth="722.0">
+         <font>
+            <Font size="15.0" />
+         </font>
+      </TextField>
+      <Label layoutX="15.0" layoutY="278.0" prefHeight="46.0" prefWidth="130.0" text="OBSERVACIONES:" textAlignment="CENTER" underline="true" wrapText="true">
+         <font>
+            <Font name="System Bold" size="15.0" />
+         </font>
+      </Label>
+      <TextArea fx:id="observacionesText" layoutX="158.0" layoutY="290.0" prefHeight="87.0" prefWidth="722.0" wrapText="true">
+         <font>
+            <Font size="15.0" />
+         </font>
+      </TextArea>
+      <TextField fx:id="telefonoText" alignment="TOP_LEFT" layoutX="159.0" layoutY="389.0" onKeyPressed="#enterPressed" prefHeight="31.0" prefWidth="722.0">
+         <font>
+            <Font size="15.0" />
+         </font>
+      </TextField>
+      <Pane layoutX="7.0" layoutY="308.0" AnchorPane.bottomAnchor="9.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0">
+         <children>
+            <Rectangle arcHeight="5.0" arcWidth="5.0" fill="#ffffff00" height="142.0" layoutX="749.0" layoutY="-14.0" stroke="BLACK" strokeType="INSIDE" strokeWidth="0.5" width="145.0" />
+            <Rectangle arcHeight="5.0" arcWidth="5.0" fill="#ffffff00" height="142.0" layoutX="5.0" layoutY="-14.0" stroke="BLACK" strokeType="INSIDE" strokeWidth="0.5" width="145.0" />
+            <Rectangle arcHeight="5.0" arcWidth="5.0" fill="#ffffff00" height="142.0" layoutX="150.0" layoutY="-14.0" stroke="BLACK" strokeType="INSIDE" strokeWidth="0.5" width="145.0" />
+            <Rectangle arcHeight="5.0" arcWidth="5.0" fill="#ffffff00" height="142.0" layoutX="295.0" layoutY="-14.0" stroke="BLACK" strokeType="INSIDE" strokeWidth="0.5" width="145.0" />
+            <Rectangle arcHeight="5.0" arcWidth="5.0" fill="#ffffff00" height="142.0" layoutX="439.0" layoutY="-14.0" stroke="BLACK" strokeType="INSIDE" strokeWidth="0.5" width="145.0" />
+            <Rectangle arcHeight="5.0" arcWidth="5.0" fill="#ffffff00" height="142.0" layoutX="584.0" layoutY="-14.0" stroke="BLACK" strokeType="INSIDE" strokeWidth="0.5" width="166.0" />
+            <Rectangle arcHeight="5.0" arcWidth="5.0" fill="#ffffff00" height="95.0" layoutX="667.0" layoutY="147.0" stroke="BLACK" strokeType="INSIDE" width="160.0" />
+            <Label alignment="CENTER" contentDisplay="CENTER" layoutX="668.0" layoutY="150.0" prefHeight="35.0" prefWidth="160.0" text="HOJA" textAlignment="CENTER" textFill="#595959">
+               <font>
+                  <Font name="System Bold" size="24.0" />
+               </font>
+            </Label>
+            <TextField fx:id="tipoEnvioFontSize" alignment="CENTER" layoutX="54.0" layoutY="33.0" prefHeight="30.0" prefWidth="43.0" text="30">
+               <font>
+                  <Font size="14.0" />
+               </font>
+            </TextField>
+            <TextField fx:id="trackingFontSize" alignment="CENTER" layoutX="200.0" layoutY="33.0" prefHeight="30.0" prefWidth="43.0" text="30">
+               <font>
+                  <Font size="14.0" />
+               </font>
+            </TextField>
+            <TextField fx:id="clienteFontSize" alignment="CENTER" layoutX="343.0" layoutY="33.0" prefHeight="30.0" prefWidth="43.0" text="30">
+               <font>
+                  <Font size="14.0" />
+               </font>
+            </TextField>
+            <TextField fx:id="domicilioFontSize" alignment="CENTER" layoutX="486.0" layoutY="33.0" prefHeight="30.0" prefWidth="43.0" text="30">
+               <font>
+                  <Font size="14.0" />
+               </font>
+            </TextField>
+            <TextField fx:id="localidadFontSize" alignment="CENTER" layoutX="644.0" layoutY="33.0" prefHeight="30.0" prefWidth="43.0" text="30">
+               <font>
+                  <Font size="14.0" />
+               </font>
+            </TextField>
+            <TextField fx:id="telefonoFontSize" alignment="CENTER" layoutX="796.0" layoutY="33.0" prefHeight="30.0" prefWidth="43.0" text="30">
+               <font>
+                  <Font size="14.0" />
+               </font>
+            </TextField>
+            <Button fx:id="generarButton" alignment="CENTER" layoutX="318.0" layoutY="174.0" mnemonicParsing="false" onAction="#generarEtiqueta" prefHeight="63.0" prefWidth="280.0" text="Generar Etiqueta" textFill="#3e58ff" wrapText="true">
+               <font>
+                  <Font name="System Bold" size="24.0" />
+               </font>
+               <graphic>
+                  <ImageView fitHeight="40.0" fitWidth="40.0">
+                     <image>
+                        <Image url="@../images/icons8-label-80.png" />
+                     </image>
+                  </ImageView>
+               </graphic>
+            </Button>
+            <CheckBox fx:id="tipoEnvioCheckBox" layoutX="24.0" mnemonicParsing="false" onAction="#onClickTipoEnvioColumn" selected="true" text="TIPO ENVIO" underline="true">
+               <font>
+                  <Font size="15.0" />
+               </font>
+            </CheckBox>
+            <CheckBox fx:id="clienteCheckBox" layoutX="324.0" layoutY="1.0" mnemonicParsing="false" onAction="#onClickClienteColumn" selected="true" text="CLIENTE" underline="true">
+               <font>
+                  <Font size="15.0" />
+               </font>
+            </CheckBox>
+            <CheckBox fx:id="telefonoCheckBox" layoutX="768.0" layoutY="1.0" mnemonicParsing="false" onAction="#onClickTelefonoColumn" selected="true" text="TELEFONO" underline="true">
+               <font>
+                  <Font size="15.0" />
+               </font>
+            </CheckBox>
+            <CheckBox fx:id="trackingCheckBox" layoutX="174.0" mnemonicParsing="false" onAction="#onClickTrackingColumn" selected="true" text="TRACKING" underline="true">
+               <font>
+                  <Font size="15.0" />
+               </font>
+            </CheckBox>
+            <CheckBox fx:id="domicilioCheckBox" layoutX="458.0" mnemonicParsing="false" onAction="#onClickDomicilioColumn" selected="true" text="DOMICILIO" underline="true">
+               <font>
+                  <Font size="15.0" />
+               </font>
+            </CheckBox>
+            <CheckBox fx:id="localidadCheckBox" layoutX="590.0" layoutY="-21.0" mnemonicParsing="false" onAction="#onClickLocalidadColumn" prefHeight="63.0" prefWidth="160.0" selected="true" text="LOCALIDAD | CP | OBSERVACIONES" textAlignment="CENTER" underline="true" wrapText="true">
+               <font>
+                  <Font size="15.0" />
+               </font>
+            </CheckBox>
+            <Label layoutX="98.0" layoutY="29.0" prefHeight="35.0" prefWidth="22.0" text="px">
+               <font>
+                  <Font size="15.0" />
+               </font>
+            </Label>
+            <Label layoutX="244.0" layoutY="29.0" prefHeight="35.0" prefWidth="22.0" text="px">
+               <font>
+                  <Font size="15.0" />
+               </font>
+            </Label>
+            <Label layoutX="386.0" layoutY="29.0" prefHeight="35.0" prefWidth="22.0" text="px">
+               <font>
+                  <Font size="15.0" />
+               </font>
+            </Label>
+            <Label layoutX="530.0" layoutY="29.0" prefHeight="35.0" prefWidth="22.0" text="px">
+               <font>
+                  <Font size="15.0" />
+               </font>
+            </Label>
+            <Label layoutX="688.0" layoutY="29.0" prefHeight="35.0" prefWidth="22.0" text="px">
+               <font>
+                  <Font size="15.0" />
+               </font>
+            </Label>
+            <Label layoutX="840.0" layoutY="29.0" prefHeight="35.0" prefWidth="22.0" text="px">
+               <font>
+                  <Font size="15.0" />
+               </font>
+            </Label>
+            <ColorPicker fx:id="tipoEnvioColorPicker" layoutX="15.0" layoutY="65.0" onAction="#onTipoEnvioColorChange" prefHeight="26.0" prefWidth="130.0">
+               <value>
+                  <Color />
+               </value>
+            </ColorPicker>
+            <ColorPicker fx:id="trackingColorPicker" layoutX="158.0" layoutY="65.0" onAction="#onTrackingColorChange" prefHeight="26.0" prefWidth="129.0">
+               <value>
+                  <Color />
+               </value>
+            </ColorPicker>
+            <ColorPicker fx:id="clienteColorPicker" layoutX="302.0" layoutY="65.0" onAction="#onClienteColorChange" prefHeight="26.0" prefWidth="129.0">
+               <value>
+                  <Color />
+               </value>
+            </ColorPicker>
+            <ColorPicker fx:id="domicilioColorPicker" layoutX="447.0" layoutY="65.0" onAction="#onDomicilioColorChange" prefHeight="26.0" prefWidth="129.0">
+               <value>
+                  <Color />
+               </value>
+            </ColorPicker>
+            <ColorPicker fx:id="localidadColorPicker" layoutX="592.0" layoutY="65.0" onAction="#onLocalidadColorChange" prefHeight="26.0" prefWidth="151.0">
+               <value>
+                  <Color />
+               </value>
+            </ColorPicker>
+            <ColorPicker fx:id="telefonoColorPicker" layoutX="757.0" layoutY="65.0" onAction="#onTelefonoColorChange" prefHeight="26.0" prefWidth="129.0">
+               <value>
+                  <Color />
+               </value>
+            </ColorPicker>
+            <ComboBox fx:id="tipoEnvioFontComboBox" layoutX="16.0" layoutY="95.0" onAction="#onTipoEnvioFontChange" prefHeight="25.0" prefWidth="129.0" />
+            <ComboBox fx:id="trackingFontComboBox" layoutX="158.0" layoutY="95.0" onAction="#onTrackingFontChange" prefHeight="25.0" prefWidth="129.0" />
+            <ComboBox fx:id="clienteFontComboBox" layoutX="302.0" layoutY="95.0" onAction="#onClienteFontChange" prefHeight="25.0" prefWidth="129.0" />
+            <ComboBox fx:id="domicilioFontComboBox" layoutX="447.0" layoutY="95.0" onAction="#onDomicilioFontChange" prefHeight="25.0" prefWidth="129.0" />
+            <ComboBox fx:id="localidadFontComboBox" layoutX="592.0" layoutY="95.0" onAction="#onLocalidadFontChange" prefHeight="25.0" prefWidth="151.0" />
+            <ComboBox fx:id="telefonoFontComboBox" layoutX="757.0" layoutY="95.0" onAction="#onTelefonoFontChange" prefHeight="25.0" prefWidth="129.0" />
+            <TextArea fx:id="logTextArea" editable="false" layoutX="8.0" layoutY="272.0" prefHeight="63.0" prefWidth="882.0">
+               <font>
+                  <Font name="System Italic" size="14.0" />
+               </font>
+            </TextArea>
+            <ComboBox fx:id="hojaComboBox" layoutX="671.0" layoutY="190.0" prefHeight="35.0" prefWidth="151.0" style="-fx-font-weight: bold;" />
+            <Button fx:id="generarButton1" alignment="CENTER" layoutX="21.0" layoutY="178.0" mnemonicParsing="false" onAction="#limpiarCampos" prefHeight="54.0" prefWidth="176.0" text="Limpiar" textFill="#969696" wrapText="true">
+               <font>
+                  <Font name="System Bold" size="21.0" />
+               </font>
+               <graphic>
+                  <ImageView fitHeight="40.0" fitWidth="40.0">
+                     <image>
+                        <Image url="@../images/icons8-clear-50.png" />
+                     </image>
+                  </ImageView>
+               </graphic>
+            </Button>
+         </children>
+      </Pane>
+   </children>
+</AnchorPane>
