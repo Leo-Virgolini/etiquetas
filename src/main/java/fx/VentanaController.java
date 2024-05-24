@@ -100,8 +100,6 @@ public class VentanaController implements Initializable {
     private TextArea logTextArea;
     @FXML
     private Button generarButton;
-    @FXML
-    private ProgressIndicator progressIndicator;
 
     private File archivoDestino;
     private AudioClip errorSound;
@@ -125,13 +123,12 @@ public class VentanaController implements Initializable {
             final CustomFont telefonoFont = new CustomFont(Float.parseFloat(telefonoFontSize.getText()), telefonoColorPicker.getValue(), telefonoFontComboBox.getValue());
 
             GeneratePDFService service = new GeneratePDFService(archivoDestino,
-                    tipoEnvioText.getText(), trackingText.getText(), clienteText.getText(), domicilioText.getText(), localidadText.getText(), cpText.getText(), observacionesText.getText(), telefonoText.getText(),
+                    tipoEnvioText.getText().trim(), trackingText.getText().trim(), clienteText.getText().trim(), domicilioText.getText().trim(), localidadText.getText().trim(), cpText.getText().trim(), observacionesText.getText().trim(), telefonoText.getText().trim(),
                     tipoEnvioFont, trackingFont, clienteFont, domicilioFont, localidadFont, telefonoFont,
                     hojaComboBox.getSelectionModel().getSelectedItem(),
                     tipoEnvioCheckBox.isSelected(), trackingCheckBox.isSelected(), clienteCheckBox.isSelected(), domicilioCheckBox.isSelected(), localidadCheckBox.isSelected(), telefonoCheckBox.isSelected());
             service.setOnRunning(e -> {
                 generarButton.setDisable(true);
-                progressIndicator.setVisible(true);
                 logTextArea.setStyle("-fx-text-fill: darkblue;");
                 logTextArea.appendText(LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yy HH:mm:ss")) + ": Generando PDF...\n");
             });
@@ -140,7 +137,6 @@ public class VentanaController implements Initializable {
                 logTextArea.setStyle("-fx-text-fill: darkgreen;");
                 logTextArea.appendText(LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yy HH:mm:ss")) + ": \"" + archivoDestino.getAbsolutePath() + "\" generado.\n");
                 generarButton.setDisable(false);
-                progressIndicator.setVisible(false);
                 limpiarCampos();
                 openPdfFile(archivoDestino.getAbsolutePath());
             });
@@ -150,7 +146,6 @@ public class VentanaController implements Initializable {
                 logTextArea.setStyle("-fx-text-fill: firebrick;");
                 logTextArea.appendText(LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yy HH:mm:ss")) + ": Error: " + service.getException().getLocalizedMessage() + "\n");
                 generarButton.setDisable(false);
-                progressIndicator.setVisible(false);
             });
             service.start();
         } else {
@@ -447,7 +442,7 @@ public class VentanaController implements Initializable {
         localidadFontComboBox.getItems().addAll(fontFamilies);
         telefonoFontComboBox.getItems().addAll(fontFamilies);
 
-        hojaComboBox.getItems().addAll(new String[]{"A4", "OFICIO", "EJECUTIVO", "LEGAL", "CARTA", "TABLOIDE"});
+        hojaComboBox.getItems().addAll("A4", "OFICIO", "EJECUTIVO", "LEGAL", "CARTA", "TABLOIDE");
 
         errorSound = new AudioClip(getClass().getResource("/audios/error.mp3").toExternalForm());
         successSound = new AudioClip(getClass().getResource("/audios/success.mp3").toExternalForm());
