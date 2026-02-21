@@ -6,7 +6,7 @@
 
 <BorderPane xmlns="http://javafx.com/javafx" xmlns:fx="http://javafx.com/fxml"
             fx:controller="ar.com.leo.ui.MainController"
-            prefWidth="900" prefHeight="700"
+            prefWidth="1100" prefHeight="900"
             stylesheets="@styles.css">
 
     <center>
@@ -43,9 +43,12 @@
                             <Label fx:id="meliStatusLabel" text="&#x26AA; Estado: No conectado" style="-fx-font-size: 13px;"/>
                         </HBox>
                         <HBox spacing="15" alignment="CENTER_LEFT">
-                            <Button text="&#x1F4E5; Obtener Etiquetas" onAction="#onFetchMeliLabels"
+                            <Button fx:id="fetchOrdersBtn" text="&#x25B6; Paso 1: Obtener Ordenes" onAction="#onFetchMeliOrders"
                                     styleClass="action-button"/>
-                            <CheckBox fx:id="incluirImpresasCheck" text="Incluir ya impresas"/>
+                            <Label text="Estado:"/>
+                            <ComboBox fx:id="estadoFilterCombo" prefWidth="150"/>
+                            <Label text="Despacho:"/>
+                            <ComboBox fx:id="despachoFilterCombo" prefWidth="180"/>
                         </HBox>
                     </VBox>
                 </Tab>
@@ -58,7 +61,23 @@
                 <Label fx:id="statsLabel" styleClass="stats-label" text=""/>
             </HBox>
 
-            <!-- Tabla -->
+            <!-- Tabla de ordenes (oculta inicialmente) -->
+            <TableView fx:id="orderTable" VBox.vgrow="ALWAYS" managed="false" visible="false">
+                <placeholder>
+                    <Label text="&#x1F4CB; Haga clic en 'Obtener Ordenes' para cargar las ordenes de ML" style="-fx-font-size: 14px; -fx-text-fill: #888;"/>
+                </placeholder>
+                <columns>
+                    <TableColumn fx:id="orderSelectCol" text="&#x2713;" prefWidth="45" minWidth="45" maxWidth="45"/>
+                    <TableColumn fx:id="orderZoneCol" text="Zona" prefWidth="80" minWidth="60" maxWidth="120"/>
+                    <TableColumn fx:id="orderSkuCol" text="SKU" prefWidth="100" minWidth="70" maxWidth="150"/>
+                    <TableColumn fx:id="orderDescCol" text="Producto" prefWidth="250"/>
+                    <TableColumn fx:id="orderQtyCol" text="Cant." prefWidth="60" minWidth="50" maxWidth="80"/>
+                    <TableColumn fx:id="orderStatusCol" text="Estado" prefWidth="100" minWidth="70" maxWidth="130"/>
+                    <TableColumn fx:id="orderSlaCol" text="Despacho" prefWidth="100" minWidth="80" maxWidth="150"/>
+                </columns>
+            </TableView>
+
+            <!-- Tabla de etiquetas -->
             <TableView fx:id="labelTable" VBox.vgrow="ALWAYS">
                 <placeholder>
                     <Label text="&#x1F4E6; Cargue etiquetas ZPL para ver el resultado ordenado" style="-fx-font-size: 14px; -fx-text-fill: #888;"/>
@@ -74,8 +93,11 @@
 
             <!-- Botones de accion -->
             <HBox spacing="15" alignment="CENTER_RIGHT" style="-fx-padding: 10 15 10 15;">
-                <Button text="&#x1F4BE; Guardar Archivo" onAction="#onSaveFile" styleClass="action-button"/>
-                <Button text="&#x1F5A8; Imprimir Directo" onAction="#onPrintDirect" styleClass="action-button"/>
+                <ProgressIndicator fx:id="progressIndicator" prefWidth="24" prefHeight="24" visible="false" managed="false"/>
+                <Button fx:id="downloadLabelsBtn" text="&#x1F3F7; Paso 2: Descargar Etiquetas" onAction="#onDownloadSelectedLabels"
+                        styleClass="action-button" disable="true"/>
+                <Button fx:id="saveFileBtn" text="&#x1F4BE; Guardar Archivo" onAction="#onSaveFile" styleClass="action-button" disable="true"/>
+                <Button fx:id="printDirectBtn" text="&#x1F5A8; Imprimir Directo" onAction="#onPrintDirect" styleClass="action-button" disable="true"/>
             </HBox>
         </VBox>
     </center>
