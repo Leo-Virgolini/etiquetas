@@ -490,21 +490,22 @@ public class MainController {
         ObservableList<OrderTableRow> rows = FXCollections.observableArrayList();
 
         for (OrdenML orden : ordenes) {
-            String sku = "";
-            String desc = "";
-            String qty = "";
-            if (!orden.getItems().isEmpty()) {
-                Venta primerItem = orden.getItems().getFirst();
-                sku = primerItem.getSku();
-                desc = primerItem.getTitulo();
-                int totalQty = 0;
-                for (Venta v : orden.getItems()) {
-                    totalQty += (int) v.getCantidad();
-                }
-                qty = String.valueOf(totalQty);
+            StringJoiner skuJoiner = new StringJoiner(", ");
+            StringJoiner descJoiner = new StringJoiner(", ");
+            StringJoiner qtyJoiner = new StringJoiner(", ");
+            String firstSku = "";
+            for (Venta v : orden.getItems()) {
+                String itemSku = v.getSku() != null ? v.getSku() : "";
+                if (firstSku.isEmpty() && !itemSku.isEmpty()) firstSku = itemSku;
+                skuJoiner.add(itemSku.isEmpty() ? "?" : itemSku);
+                descJoiner.add(v.getTitulo() != null && !v.getTitulo().isEmpty() ? v.getTitulo() : itemSku);
+                qtyJoiner.add(String.valueOf((int) v.getCantidad()));
             }
+            String sku = skuJoiner.toString();
+            String desc = descJoiner.toString();
+            String qty = qtyJoiner.toString();
 
-            String zone = (sku != null && !sku.isEmpty()) ? skuToZone.getOrDefault(sku, "???") : "???";
+            String zone = (!firstSku.isEmpty()) ? skuToZone.getOrDefault(firstSku, "???") : "???";
 
             String slaDate = "";
             Long shipId = orden.getShipmentId();

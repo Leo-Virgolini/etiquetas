@@ -295,13 +295,15 @@ public class MercadoLibreAPI {
             Long shipId = orden.getShipmentId();
             if (shipId == null || shipId <= 0) continue;
 
-            String sku = "";
-            String title = "";
-            if (!orden.getItems().isEmpty()) {
-                Venta primerItem = orden.getItems().getFirst();
-                sku = primerItem.getSku();
-                title = primerItem.getTitulo();
+            StringJoiner skuJoiner = new StringJoiner(", ");
+            StringJoiner titleJoiner = new StringJoiner(", ");
+            for (Venta v : orden.getItems()) {
+                String s = v.getSku() != null ? v.getSku() : "";
+                skuJoiner.add(s.isEmpty() ? "?" : s);
+                titleJoiner.add(v.getTitulo() != null && !v.getTitulo().isEmpty() ? v.getTitulo() : s);
             }
+            String sku = skuJoiner.toString();
+            String title = titleJoiner.toString();
 
             if (!shipmentSkuMap.containsKey(shipId)) {
                 shipmentSkuMap.put(shipId, new SkuInfo(sku, title));

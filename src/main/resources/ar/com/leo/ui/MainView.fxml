@@ -45,7 +45,7 @@
                         <HBox spacing="15" alignment="CENTER_LEFT">
                             <Button fx:id="fetchOrdersBtn" text="&#x25B6; Paso 1: Obtener Ordenes" onAction="#onFetchMeliOrders"
                                     styleClass="action-button"/>
-                            <Label text="Estado:"/>
+                            <Label text="Estado impresi&#xF3;n:"/>
                             <ComboBox fx:id="estadoFilterCombo" prefWidth="150"/>
                             <Label text="Despacho:"/>
                             <ComboBox fx:id="despachoFilterCombo" prefWidth="180"/>
