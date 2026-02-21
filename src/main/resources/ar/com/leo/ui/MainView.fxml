@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<BorderPane xmlns="http://javafx.com/javafx" xmlns:fx="http://javafx.com/fxml"
+            fx:controller="ar.com.leo.ui.MainController"
+            prefWidth="900" prefHeight="700"
+            stylesheets="@styles.css">
+
+    <center>
+        <VBox spacing="0">
+
+            <!-- Excel compartido (arriba de los tabs) -->
+            <HBox spacing="10" alignment="CENTER_LEFT" style="-fx-padding: 12 15 12 15; -fx-background-color: #f0f0f0; -fx-border-color: #ddd; -fx-border-width: 0 0 1 0;">
+                <Label text="&#x1F4D7; Archivo Excel (zonas):" style="-fx-font-weight: bold;"/>
+                <TextField fx:id="excelFileField" HBox.hgrow="ALWAYS" editable="false"
+                           promptText="Mapeo SKU &#x2192; Zona (.xlsx)"/>
+                <Button text="&#x1F4C2; Seleccionar" onAction="#onSelectExcelFile"/>
+            </HBox>
+
+            <TabPane fx:id="tabPane" VBox.vgrow="NEVER">
+                <!-- Tab Archivo Local -->
+                <Tab text="&#x1F4C4; Archivo Local" closable="false">
+                    <VBox spacing="10" style="-fx-padding: 15;">
+                        <HBox spacing="10" alignment="CENTER_LEFT">
+                            <Label text="&#x1F4C4; Archivo ZPL:" prefWidth="130"/>
+                            <TextField fx:id="zplFileField" HBox.hgrow="ALWAYS" editable="false"
+                                       promptText="Seleccionar archivo .txt con etiquetas ZPL"/>
+                            <Button text="&#x1F4C2; Seleccionar" onAction="#onSelectZplFile"/>
+                        </HBox>
+                        <HBox alignment="CENTER_LEFT">
+                            <Button text="&#x25B6; Procesar" onAction="#onProcessLocal" styleClass="action-button"/>
+                        </HBox>
+                    </VBox>
+                </Tab>
+
+                <!-- Tab API MercadoLibre -->
+                <Tab text="&#x1F310; API MercadoLibre" closable="false">
+                    <VBox spacing="10" style="-fx-padding: 15;">
+                        <HBox spacing="10" alignment="CENTER_LEFT">
+                            <Label fx:id="meliStatusLabel" text="&#x26AA; Estado: No conectado" style="-fx-font-size: 13px;"/>
+                        </HBox>
+                        <HBox spacing="15" alignment="CENTER_LEFT">
+                            <Button text="&#x1F4E5; Obtener Etiquetas" onAction="#onFetchMeliLabels"
+                                    styleClass="action-button"/>
+                            <CheckBox fx:id="incluirImpresasCheck" text="Incluir ya impresas"/>
+                        </HBox>
+                    </VBox>
+                </Tab>
+            </TabPane>
+
+            <!-- Estadisticas -->
+            <HBox fx:id="statsBar" spacing="15" alignment="CENTER_LEFT" styleClass="stats-bar"
+                  managed="false" visible="false">
+                <padding><Insets top="8" bottom="8" left="15" right="15"/></padding>
+                <Label fx:id="statsLabel" styleClass="stats-label" text=""/>
+            </HBox>
+
+            <!-- Tabla -->
+            <TableView fx:id="labelTable" VBox.vgrow="ALWAYS">
+                <placeholder>
+                    <Label text="&#x1F4E6; Cargue etiquetas ZPL para ver el resultado ordenado" style="-fx-font-size: 14px; -fx-text-fill: #888;"/>
+                </placeholder>
+                <columns>
+                    <TableColumn fx:id="zoneCol" text="Zona" prefWidth="80" minWidth="60" maxWidth="120"/>
+                    <TableColumn fx:id="skuCol" text="SKU" prefWidth="100" minWidth="70" maxWidth="150"/>
+                    <TableColumn fx:id="descCol" text="Producto" prefWidth="300"/>
+                    <TableColumn fx:id="detailsCol" text="Detalles" prefWidth="300"/>
+                    <TableColumn fx:id="countCol" text="Cant." prefWidth="60" minWidth="50" maxWidth="80"/>
+                </columns>
+            </TableView>
+
+            <!-- Botones de accion -->
+            <HBox spacing="15" alignment="CENTER_RIGHT" style="-fx-padding: 10 15 10 15;">
+                <Button text="&#x1F4BE; Guardar Archivo" onAction="#onSaveFile" styleClass="action-button"/>
+                <Button text="&#x1F5A8; Imprimir Directo" onAction="#onPrintDirect" styleClass="action-button"/>
+            </HBox>
+        </VBox>
+    </center>
+</BorderPane>

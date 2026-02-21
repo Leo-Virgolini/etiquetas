@@ -1,0 +1,42 @@
+.root {
+    -fx-font-family: "Segoe UI", system;
+}
+
+.zone-badge {
+    -fx-padding: 2 8 2 8;
+    -fx-background-radius: 4;
+    -fx-font-weight: bold;
+    -fx-font-size: 12px;
+}
+
+.zone-j1 { -fx-background-color: #4CAF50; -fx-text-fill: white; }
+.zone-j2 { -fx-background-color: #8BC34A; -fx-text-fill: white; }
+.zone-j3 { -fx-background-color: #CDDC39; -fx-text-fill: #333; }
+.zone-t1 { -fx-background-color: #2196F3; -fx-text-fill: white; }
+.zone-t2 { -fx-background-color: #03A9F4; -fx-text-fill: white; }
+.zone-t3 { -fx-background-color: #00BCD4; -fx-text-fill: white; }
+.zone-carros { -fx-background-color: #FF9800; -fx-text-fill: white; }
+.zone-retiros { -fx-background-color: #9C27B0; -fx-text-fill: white; }
+.zone-unknown { -fx-background-color: #9E9E9E; -fx-text-fill: white; }
+
+.stats-bar {
+    -fx-padding: 8;
+    -fx-background-color: #f5f5f5;
+    -fx-border-color: #ddd;
+    -fx-border-width: 0 0 1 0;
+}
+
+.stats-label {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}
+
+.action-button {
+    -fx-font-size: 14px;
+    -fx-padding: 8 20 8 20;
+}
+
+.title-label {
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+}
