@@ -10,7 +10,7 @@ public class OrdenML {
     private final Long packId;
     private final Long shipmentId;
     private final OffsetDateTime fecha;
-    private final String shippingSubstatus;
+    private String shippingSubstatus;
     private final List<Venta> items = new ArrayList<>();
 
     public OrdenML(long orderId, Long packId, Long shipmentId, OffsetDateTime fecha, String shippingSubstatus) {
@@ -26,5 +26,6 @@ public class OrdenML {
     public Long getShipmentId() { return shipmentId; }
     public OffsetDateTime getFecha() { return fecha; }
     public String getShippingSubstatus() { return shippingSubstatus; }
+    public void setShippingSubstatus(String shippingSubstatus) { this.shippingSubstatus = shippingSubstatus; }
     public List<Venta> getItems() { return items; }
 }

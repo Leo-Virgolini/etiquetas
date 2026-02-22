@@ -40,3 +40,25 @@
     -fx-font-size: 18px;
     -fx-font-weight: bold;
 }
+
+/* ── Tab Archivo Local (verde) ── */
+.tab-local > .tab-container {
+    -fx-background-color: #E8F5E9;
+}
+.tab-local:selected > .tab-container {
+    -fx-background-color: #C8E6C9;
+}
+.tab-local-content {
+    -fx-background-color: #F1F8E9;
+}
+
+/* ── Tab API MercadoLibre (amarillo ML) ── */
+.tab-api > .tab-container {
+    -fx-background-color: #FFF3C4;
+}
+.tab-api:selected > .tab-container {
+    -fx-background-color: #FFE600;
+}
+.tab-api-content {
+    -fx-background-color: #FFFBE6;
+}

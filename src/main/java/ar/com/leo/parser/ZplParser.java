@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.StringJoiner;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -18,6 +19,8 @@ public class ZplParser {
     private static final Pattern SEPARATOR = Pattern.compile("^\\^XA\\s*\\^MCY\\s*\\^XZ$", Pattern.DOTALL);
     private static final Pattern FD_FIELD = Pattern.compile("\\^FD(.*?)\\^FS", Pattern.DOTALL);
     private static final Pattern SKU_PATTERN = Pattern.compile("SKU:\\s*(\\S+)");
+    private static final Pattern QUANTITY_PATTERN = Pattern.compile(
+            "\\^A0N,70,70\\^FB160,1,0,C(?:\\^FR)?\\^FD(\\d+)\\^FS");
 
     private static final Pattern NON_DIGIT_START = Pattern.compile("^\\D+");
     private static final Pattern NON_DIGIT_END = Pattern.compile("\\D+$");
@@ -75,9 +78,9 @@ public class ZplParser {
             }
 
             String decoded = ZplHexDecoder.decode(block);
-            String sku = null;
-            String description = null;
-            String details = null;
+            List<String> skus = new ArrayList<>();
+            List<String> descriptions = new ArrayList<>();
+            List<String> detailsList = new ArrayList<>();
             String previousField = null;
 
             Matcher fdMatcher = FD_FIELD.matcher(decoded);
@@ -85,22 +88,32 @@ public class ZplParser {
                 String fieldContent = fdMatcher.group(1);
                 Matcher skuMatcher = SKU_PATTERN.matcher(fieldContent);
                 if (skuMatcher.find()) {
-                    sku = normalizeSku(skuMatcher.group(1));
+                    skus.add(normalizeSku(skuMatcher.group(1)));
                     if (previousField != null && !previousField.isEmpty()) {
-                        description = previousField;
+                        descriptions.add(previousField);
                     }
                     String beforeSku = fieldContent.substring(0, skuMatcher.start()).trim();
                     if (beforeSku.endsWith("|")) {
                         beforeSku = beforeSku.substring(0, beforeSku.length() - 1).trim();
                     }
                     if (!beforeSku.isEmpty()) {
-                        details = beforeSku;
+                        detailsList.add(beforeSku);
                     }
                 }
                 previousField = fieldContent.trim();
             }
 
-            labels.add(new ZplLabel(block, sku, description, details));
+            String sku = skus.isEmpty() ? null : String.join("\n", skus);
+            String description = descriptions.isEmpty() ? null : String.join("\n", descriptions);
+            String details = detailsList.isEmpty() ? null : String.join("\n", detailsList);
+
+            int quantity = 1;
+            Matcher qtyMatcher = QUANTITY_PATTERN.matcher(decoded);
+            if (qtyMatcher.find()) {
+                quantity = Integer.parseInt(qtyMatcher.group(1));
+            }
+
+            labels.add(new ZplLabel(block, sku, description, details, quantity));
         }
 
         return labels;

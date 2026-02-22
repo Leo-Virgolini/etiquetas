@@ -1,9 +1,11 @@
 package ar.com.leo;
 
+import ar.com.leo.api.ml.MercadoLibreAPI;
 import atlantafx.base.theme.PrimerLight;
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
+import javafx.scene.image.Image;
 import javafx.stage.Stage;
 
 public class EtiquetasApp extends Application {
@@ -17,9 +19,15 @@ public class EtiquetasApp extends Application {
 
         primaryStage.setTitle("Ordenador de Etiquetas ZPL");
         primaryStage.setScene(scene);
+        primaryStage.getIcons().add(new Image(getClass().getResourceAsStream("/ar/com/leo/ui/icons8-etiqueta-100.png")));
         primaryStage.setMinWidth(800);
         primaryStage.setMinHeight(600);
         primaryStage.show();
+    }
+
+    @Override
+    public void stop() {
+        MercadoLibreAPI.shutdownExecutors();
     }
 
     public static void main(String[] args) {

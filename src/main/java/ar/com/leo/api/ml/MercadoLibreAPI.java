@@ -28,6 +28,9 @@ import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -42,16 +45,35 @@ public class MercadoLibreAPI {
     public record SlaInfo(String status, OffsetDateTime expectedDate) {
     }
 
+    public record ShipmentInfo(String substatus, OffsetDateTime slaDate) {
+    }
+
     private static final int MAX_SHIPMENTS_PER_REQUEST = 50;
     private static final Path MERCADOLIBRE_FILE = BASE_SECRET_DIR.resolve("ml_credentials.json");
     private static final Path TOKEN_FILE = BASE_SECRET_DIR.resolve("ml_tokens.json");
     private static final Object TOKEN_LOCK = new Object();
     private static final ObjectMapper mapper = JsonMapper.shared();
     private static final HttpClient httpClient = HttpClient.newHttpClient();
-    private static final HttpRetryHandler retryHandler = new HttpRetryHandler(httpClient, 30000L, 5, MercadoLibreAPI::verificarTokens);
+    private static final HttpRetryHandler retryHandler = new HttpRetryHandler(httpClient, 30000L, 10, MercadoLibreAPI::verificarTokens);
+    private static final ExecutorService executor = Executors.newFixedThreadPool(10);
     private static final ZplParser zplParser = new ZplParser();
     private static MLCredentials mlCredentials;
     private static volatile TokensML tokens;
+
+    public static void shutdownExecutors() {
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+                if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
+                    AppLogger.warn("El executor no terminó correctamente después de shutdownNow.");
+                }
+            }
+        } catch (InterruptedException e) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
 
     public static String getUserId() throws IOException {
         MercadoLibreAPI.verificarTokens();
@@ -72,9 +94,14 @@ public class MercadoLibreAPI {
         return mapper.readTree(response.body()).get("id").asString();
     }
 
+    private static final String SUBSTATUS_PENDIENTES = "ready_to_print";
+    private static final String SUBSTATUS_IMPRESAS = "printed,ready_for_dropoff,ready_for_pickup";
+
     /**
      * Obtiene las ventas de ML con etiqueta lista para imprimir.
-     * @param incluirImpresas si es true, incluye también las que ya fueron impresas (substatus=printed)
+     * Hace búsquedas separadas por grupo de substatus para poder asignar el substatus
+     * a cada orden sin necesidad de consultar /shipments/{id} individualmente.
+     * @param incluirImpresas si es true, incluye también las que ya fueron impresas/despachadas por el vendedor
      */
     public static MLOrderResult obtenerVentasReadyToPrint(String userId, boolean incluirImpresas) {
         verificarTokens();
@@ -82,121 +109,154 @@ public class MercadoLibreAPI {
         List<Venta> ventas = new ArrayList<>();
         List<OrdenML> ordenes = new ArrayList<>();
         Set<Long> orderIdsSeen = new HashSet<>();
-        int offset = 0;
+
+        // Siempre buscar pendientes
+        searchAndCollect(userId, SUBSTATUS_PENDIENTES, "ready_to_print", orderIdsSeen, ventas, ordenes);
+        AppLogger.info("ML - Órdenes pendientes (ready_to_print): " + ordenes.size());
+
+        // Si incluir impresas, hacer segunda búsqueda
+        if (incluirImpresas) {
+            int pendientes = ordenes.size();
+            searchAndCollect(userId, SUBSTATUS_IMPRESAS, "printed", orderIdsSeen, ventas, ordenes);
+            AppLogger.info("ML - Órdenes impresas/procesadas: " + (ordenes.size() - pendientes));
+        }
+
+        AppLogger.info("ML - Total: " + ventas.size() + " ventas, " + ordenes.size() + " órdenes");
+        return new MLOrderResult(ventas, ordenes);
+    }
+
+    /**
+     * Busca órdenes con un substatus dado, pagina automáticamente, y agrega los resultados.
+     * A cada OrdenML le asigna el substatusTag como shippingSubstatus.
+     */
+    private static void searchAndCollect(String userId, String substatus, String substatusTag,
+                                         Set<Long> orderIdsSeen, List<Venta> ventas, List<OrdenML> ordenes) {
         final int limit = 50;
-        boolean hasMore = true;
 
-        while (hasMore) {
-            final int currentOffset = offset;
-            String substatus = incluirImpresas ? "ready_to_print,printed" : "ready_to_print";
-            String url = String.format(
-                    "https://api.mercadolibre.com/orders/search?seller=%s&shipping.status=ready_to_ship&shipping.substatus=%s&sort=date_asc&offset=%d&limit=%d",
-                    userId, substatus, currentOffset, limit);
+        String firstUrl = buildOrderSearchUrl(userId, substatus, 0, limit);
+        String firstBody = fetchOrderSearchPage(firstUrl);
+        if (firstBody == null) return;
 
-            Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .header("Authorization", "Bearer " + tokens.accessToken)
-                    .GET()
-                    .build();
+        JsonNode firstRoot = mapper.readTree(firstBody);
+        int total = firstRoot.path("paging").path("total").asInt(0);
 
-            HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
+        List<String> allBodies = new ArrayList<>();
+        allBodies.add(firstBody);
 
-            if (response == null || response.statusCode() != 200) {
-                String body = response != null ? response.body() : "sin respuesta";
-                AppLogger.warn("ML - Error al obtener órdenes ready_to_print (offset " + currentOffset + "): " + body);
-                break;
+        if (total > limit) {
+            List<CompletableFuture<String>> futures = new ArrayList<>();
+            for (int off = limit; off < total; off += limit) {
+                String pageUrl = buildOrderSearchUrl(userId, substatus, off, limit);
+                futures.add(CompletableFuture.supplyAsync(() -> fetchOrderSearchPage(pageUrl), executor));
             }
+            for (var future : futures) {
+                String body = future.join();
+                if (body != null) allBodies.add(body);
+            }
+        }
 
-            JsonNode root = mapper.readTree(response.body());
+        for (String body : allBodies) {
+            JsonNode root = mapper.readTree(body);
             JsonNode results = root.path("results");
-
-            if (!results.isArray() || results.isEmpty()) {
-                break;
-            }
+            if (!results.isArray()) continue;
 
             for (JsonNode order : results) {
-                long orderId = order.path("id").asLong();
-                if (!orderIdsSeen.add(orderId)) continue;
-
-                // Excluir órdenes con tag "delivered"
-                JsonNode tagsNode = order.path("tags");
-                if (tagsNode.isArray()) {
-                    boolean esEntregada = false;
-                    for (JsonNode tag : tagsNode) {
-                        if ("delivered".equals(tag.asString())) {
-                            esEntregada = true;
-                            break;
-                        }
-                    }
-                    if (esEntregada) continue;
-                }
-
-                String dateCreated = order.path("date_created").asString("");
-                OffsetDateTime fecha = null;
-                if (!dateCreated.isBlank()) {
-                    try {
-                        fecha = OffsetDateTime.parse(dateCreated);
-                    } catch (Exception e) {
-                        AppLogger.warn("ML - Error al parsear fecha de orden " + orderId + ": " + dateCreated);
-                    }
-                }
-                JsonNode packNode = order.path("pack_id");
-                Long packId = packNode.isNull() || packNode.isMissingNode() ? null : packNode.asLong();
-                JsonNode shippingObj = order.path("shipping");
-                JsonNode shippingIdNode = shippingObj.path("id");
-                Long shipmentId = shippingIdNode.isNull() || shippingIdNode.isMissingNode() ? null : shippingIdNode.asLong();
-                String shippingSubstatus = shippingObj.path("substatus").asString("");
-                OrdenML ordenML = new OrdenML(orderId, packId, shipmentId, fecha, shippingSubstatus);
-
-                JsonNode orderItems = order.path("order_items");
-                if (!orderItems.isArray()) continue;
-
-                for (JsonNode orderItem : orderItems) {
-                    JsonNode item = orderItem.path("item");
-                    String rawSku = item.path("seller_sku").asString("");
-                    if (rawSku.isBlank()) {
-                        rawSku = item.path("seller_custom_field").asString("");
-                    }
-                    String sku = rawSku.isBlank() ? "" : normalizeSku(rawSku);
-                    if (sku == null) sku = "";
-                    String itemTitle = item.path("title").asString("");
-                    double quantity = orderItem.path("quantity").asDouble(0);
-
-                    if (quantity <= 0) {
-                        AppLogger.warn("ML - Producto con cantidad inválida en orden " + orderId + ": " + sku);
-                        String errorSku = sku.isBlank() ? itemTitle : sku;
-                        Venta venta = new Venta("CANT INVALIDA: " + errorSku, quantity, "ML", itemTitle);
-                        ventas.add(venta);
-                        ordenML.getItems().add(venta);
-                        continue;
-                    }
-                    if (sku.isBlank()) {
-                        AppLogger.warn("ML - Producto sin SKU en orden " + orderId + ": " + itemTitle);
-                        Venta venta = new Venta("SIN SKU: " + itemTitle, quantity, "ML", itemTitle);
-                        ventas.add(venta);
-                        ordenML.getItems().add(venta);
-                        continue;
-                    }
-                    Venta venta = new Venta(sku, quantity, "ML", itemTitle);
-                    ventas.add(venta);
-                    ordenML.getItems().add(venta);
-                }
-
-                if (!ordenML.getItems().isEmpty()) {
+                OrdenML ordenML = parseOrder(order, orderIdsSeen, ventas);
+                if (ordenML != null) {
+                    ordenML.setShippingSubstatus(substatusTag);
                     ordenes.add(ordenML);
                 }
             }
+        }
+    }
 
-            JsonNode paging = root.path("paging");
-            int total = paging.path("total").asInt(0);
-            offset += limit;
-            hasMore = offset < total;
+    private static String buildOrderSearchUrl(String userId, String substatus, int offset, int limit) {
+        return String.format(
+                "https://api.mercadolibre.com/orders/search?seller=%s&shipping.status=ready_to_ship&shipping.substatus=%s&sort=date_asc&offset=%d&limit=%d",
+                userId, substatus, offset, limit);
+    }
 
-            AppLogger.info(String.format("ML - Obtenidas %d/%d órdenes ready_to_print", Math.min(offset, total), total));
+
+    private static String fetchOrderSearchPage(String url) {
+        Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Authorization", "Bearer " + tokens.accessToken)
+                .GET()
+                .build();
+
+        HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
+
+        if (response == null || response.statusCode() != 200) {
+            String body = response != null ? response.body() : "sin respuesta";
+            AppLogger.warn("ML - Error al obtener órdenes: " + body);
+            return null;
+        }
+        return response.body();
+    }
+
+    private static OrdenML parseOrder(JsonNode order, Set<Long> orderIdsSeen, List<Venta> ventas) {
+        long orderId = order.path("id").asLong();
+        if (!orderIdsSeen.add(orderId)) return null;
+
+        // Excluir órdenes con tag "delivered"
+        JsonNode tagsNode = order.path("tags");
+        if (tagsNode.isArray()) {
+            for (JsonNode tag : tagsNode) {
+                if ("delivered".equals(tag.asString())) return null;
+            }
         }
 
-        AppLogger.info("ML - Ventas ready_to_print: " + ventas.size());
-        return new MLOrderResult(ventas, ordenes);
+        String dateCreated = order.path("date_created").asString("");
+        OffsetDateTime fecha = null;
+        if (!dateCreated.isBlank()) {
+            try {
+                fecha = OffsetDateTime.parse(dateCreated);
+            } catch (Exception e) {
+                AppLogger.warn("ML - Error al parsear fecha de orden " + orderId + ": " + dateCreated);
+            }
+        }
+        JsonNode packNode = order.path("pack_id");
+        Long packId = packNode.isNull() || packNode.isMissingNode() ? null : packNode.asLong();
+        JsonNode shippingObj = order.path("shipping");
+        JsonNode shippingIdNode = shippingObj.path("id");
+        Long shipmentId = shippingIdNode.isNull() || shippingIdNode.isMissingNode() ? null : shippingIdNode.asLong();
+        OrdenML ordenML = new OrdenML(orderId, packId, shipmentId, fecha, "");
+
+        JsonNode orderItems = order.path("order_items");
+        if (!orderItems.isArray()) return null;
+
+        for (JsonNode orderItem : orderItems) {
+            JsonNode item = orderItem.path("item");
+            String rawSku = item.path("seller_sku").asString("");
+            if (rawSku.isBlank()) {
+                rawSku = item.path("seller_custom_field").asString("");
+            }
+            String sku = rawSku.isBlank() ? "" : normalizeSku(rawSku);
+            if (sku == null) sku = "";
+            String itemTitle = item.path("title").asString("");
+            double quantity = orderItem.path("quantity").asDouble(0);
+
+            if (quantity <= 0) {
+                AppLogger.warn("ML - Producto con cantidad inválida en orden " + orderId + ": " + sku);
+                String errorSku = sku.isBlank() ? itemTitle : sku;
+                Venta venta = new Venta("CANT INVALIDA: " + errorSku, quantity, "ML", itemTitle);
+                ventas.add(venta);
+                ordenML.getItems().add(venta);
+                continue;
+            }
+            if (sku.isBlank()) {
+                AppLogger.warn("ML - Producto sin SKU en orden " + orderId + ": " + itemTitle);
+                Venta venta = new Venta("SIN SKU: " + itemTitle, quantity, "ML", itemTitle);
+                ventas.add(venta);
+                ordenML.getItems().add(venta);
+                continue;
+            }
+            Venta venta = new Venta(sku, quantity, "ML", itemTitle);
+            ventas.add(venta);
+            ordenML.getItems().add(venta);
+        }
+
+        return ordenML.getItems().isEmpty() ? null : ordenML;
     }
 
     // -----------------------------------------------------------------------------------------------------------------
@@ -227,14 +287,18 @@ public class MercadoLibreAPI {
 
             String sku = "";
             String desc = "";
+            int totalQty = 0;
             if (!orden.getItems().isEmpty()) {
                 Venta primerItem = orden.getItems().getFirst();
                 sku = primerItem.getSku();
                 desc = primerItem.getTitulo();
             }
+            for (Venta v : orden.getItems()) {
+                totalQty += (int) v.getCantidad();
+            }
 
             if (!shipmentSkuMap.containsKey(shipId)) {
-                shipmentSkuMap.put(shipId, new SkuInfo(sku, desc));
+                shipmentSkuMap.put(shipId, new SkuInfo(sku, desc, Math.max(totalQty, 1)));
                 shipmentIds.add(shipId);
             }
         }
@@ -296,16 +360,18 @@ public class MercadoLibreAPI {
             if (shipId == null || shipId <= 0) continue;
 
             String sku = "";
+            int totalQty = 0;
             StringJoiner titleJoiner = new StringJoiner(", ");
             for (Venta v : orden.getItems()) {
                 String s = v.getSku() != null ? v.getSku() : "";
                 if (sku.isEmpty() && !s.isEmpty()) sku = s;
                 titleJoiner.add(v.getTitulo() != null && !v.getTitulo().isEmpty() ? v.getTitulo() : s);
+                totalQty += (int) v.getCantidad();
             }
             String title = titleJoiner.toString();
 
             if (!shipmentSkuMap.containsKey(shipId)) {
-                shipmentSkuMap.put(shipId, new SkuInfo(sku, title));
+                shipmentSkuMap.put(shipId, new SkuInfo(sku, title, Math.max(totalQty, 1)));
                 shipmentIds.add(shipId);
             }
         }
@@ -382,6 +448,7 @@ public class MercadoLibreAPI {
             String sku = label.sku();
             String desc = label.productDescription();
 
+            int qty = 1;
             if (idIterator.hasNext()) {
                 long shipId = idIterator.next();
                 SkuInfo info = skuMap.get(shipId);
@@ -392,10 +459,11 @@ public class MercadoLibreAPI {
                     if (info.title != null && !info.title.isBlank()) {
                         desc = info.title;
                     }
+                    qty = info.quantity;
                 }
             }
 
-            enriched.add(new ZplLabel(label.rawZpl(), sku, desc, label.details()));
+            enriched.add(new ZplLabel(label.rawZpl(), sku, desc, label.details(), qty));
         }
 
         return enriched;
@@ -419,7 +487,7 @@ public class MercadoLibreAPI {
         return sb.toString();
     }
 
-    private record SkuInfo(String sku, String title) {}
+    private record SkuInfo(String sku, String title, int quantity) {}
 
     // -----------------------------------------------------------------------------------------------------------------
     // VENTAS SELLER AGREEMENT (sin envío)
@@ -681,7 +749,7 @@ public class MercadoLibreAPI {
                 synchronized (stockMap) {
                     stockMap.put(sku, stock);
                 }
-            });
+            }, executor);
             futures.add(future);
         }
 
@@ -745,7 +813,7 @@ public class MercadoLibreAPI {
                         slaMap.put(shipmentId, sla);
                     }
                 }
-            });
+            }, executor);
             futures.add(future);
         }
 
@@ -781,13 +849,118 @@ public class MercadoLibreAPI {
                         substatusMap.put(shipmentId, combined);
                     }
                 }
-            });
+            }, executor);
             futures.add(future);
         }
 
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
         return substatusMap;
+    }
+
+    /**
+     * Obtiene substatus y SLA de múltiples envíos en paralelo con UNA sola llamada por envío.
+     * Reemplaza las llamadas separadas a obtenerSlasParalelo + obtenerShipmentSubstatuses.
+     */
+    public static Map<Long, ShipmentInfo> obtenerShipmentInfoParalelo(List<Long> shipmentIds) {
+        Map<Long, ShipmentInfo> result = new LinkedHashMap<>();
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+
+        for (Long shipmentId : shipmentIds) {
+            futures.add(CompletableFuture.runAsync(() -> {
+                verificarTokens();
+
+                // 1) Obtener status/substatus del envío
+                String shipUrl = "https://api.mercadolibre.com/shipments/" + shipmentId;
+                Supplier<HttpRequest> shipReq = () -> HttpRequest.newBuilder()
+                        .uri(URI.create(shipUrl))
+                        .header("Authorization", "Bearer " + tokens.accessToken)
+                        .header("X-Format-New", "true")
+                        .GET()
+                        .build();
+
+                HttpResponse<String> shipResponse = retryHandler.sendWithRetry(shipReq);
+                String combined = "";
+                if (shipResponse != null && shipResponse.statusCode() == 200) {
+                    JsonNode root = mapper.readTree(shipResponse.body());
+                    String status = root.path("status").asString("");
+                    String substatus = root.path("substatus").asString("");
+                    combined = substatus.isEmpty() ? status : substatus;
+                }
+
+                // 2) Obtener SLA del endpoint dedicado (estimated_handling_limit deprecado desde mayo 2025)
+                OffsetDateTime slaDate = null;
+                SlaInfo sla = obtenerSla(shipmentId);
+                if (sla != null && sla.expectedDate() != null) {
+                    slaDate = sla.expectedDate();
+                }
+
+                synchronized (result) {
+                    result.put(shipmentId, new ShipmentInfo(combined, slaDate));
+                }
+            }, executor));
+        }
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        return result;
+    }
+
+    // -----------------------------------------------------------------------------------------------------------------
+    // DIAGNOSTICO
+    // -----------------------------------------------------------------------------------------------------------------
+
+    /**
+     * Consulta una orden por ID y loguea su estado y el de su envío. Útil para depuración.
+     */
+    public static void diagnosticarOrden(long orderId) {
+        verificarTokens();
+        String url = "https://api.mercadolibre.com/orders/" + orderId;
+
+        Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Authorization", "Bearer " + tokens.accessToken)
+                .GET()
+                .build();
+
+        HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
+
+        if (response == null) {
+            AppLogger.info("DIAG - Orden " + orderId + ": sin respuesta");
+            return;
+        }
+        if (response.statusCode() != 200) {
+            AppLogger.info("DIAG - Orden " + orderId + ": HTTP " + response.statusCode() + " - " + response.body());
+            return;
+        }
+
+        JsonNode root = mapper.readTree(response.body());
+        String orderStatus = root.path("status").asString("");
+        long shippingId = root.path("shipping").path("id").asLong(0);
+        JsonNode tags = root.path("tags");
+
+        AppLogger.info("DIAG - Orden " + orderId + ": status=" + orderStatus + ", shipping.id=" + shippingId + ", tags=" + tags);
+
+        // Consultar el envío
+        if (shippingId > 0) {
+            String shipUrl = "https://api.mercadolibre.com/shipments/" + shippingId;
+            Supplier<HttpRequest> shipReq = () -> HttpRequest.newBuilder()
+                    .uri(URI.create(shipUrl))
+                    .header("Authorization", "Bearer " + tokens.accessToken)
+                    .header("X-Format-New", "true")
+                    .GET()
+                    .build();
+
+            HttpResponse<String> shipResponse = retryHandler.sendWithRetry(shipReq);
+            if (shipResponse != null && shipResponse.statusCode() == 200) {
+                JsonNode shipRoot = mapper.readTree(shipResponse.body());
+                String shipStatus = shipRoot.path("status").asString("");
+                String shipSubstatus = shipRoot.path("substatus").asString("");
+                JsonNode leadTime = shipRoot.path("lead_time");
+                AppLogger.info("DIAG - Shipment " + shippingId + ": status=" + shipStatus + ", substatus=" + shipSubstatus + ", lead_time=" + leadTime);
+            } else {
+                AppLogger.info("DIAG - Shipment " + shippingId + ": error al consultar");
+            }
+        }
     }
 
     // -----------------------------------------------------------------------------------------------------------------

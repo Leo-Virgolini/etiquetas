@@ -9,27 +9,13 @@ public class LabelSorter {
 
     private static final String UNKNOWN = "???";
 
-    private static final List<String> ZONE_ORDER = List.of(
-            "J1", "J2", "J3", "T1", "T2", "T3", "CARROS", "RETIROS"
-    );
-
-    private String zoneBase(String zone) {
-        int dash = zone.indexOf('-');
-        return dash > 0 ? zone.substring(0, dash).toUpperCase() : zone.toUpperCase();
-    }
-
-    private String zoneSuffix(String zone) {
-        int dash = zone.indexOf('-');
-        return dash > 0 ? zone.substring(dash + 1).toUpperCase() : "";
-    }
-
-    private int zoneBaseIndex(String zone) {
-        String base = zoneBase(zone);
-        for (int i = 0; i < ZONE_ORDER.size(); i++) {
-            if (ZONE_ORDER.get(i).equals(base)) {
-                return i;
-            }
-        }
+    private int zoneGroupPriority(String zone) {
+        String z = zone.toUpperCase();
+        if (z.startsWith("J")) return 0;
+        if (z.startsWith("T")) return 1;
+        if (z.startsWith("COMBOS")) return 2;
+        if (z.startsWith("CARROS")) return 3;
+        if (z.startsWith("RETIROS")) return 4;
         return Integer.MAX_VALUE;
     }
 
@@ -58,8 +44,8 @@ public class LabelSorter {
                     return new SortedLabelGroup(zone, sku, desc, details, entry.getValue());
                 })
                 .sorted(Comparator
-                        .<SortedLabelGroup>comparingInt(g -> zoneBaseIndex(g.zone()))
-                        .thenComparing(g -> zoneSuffix(g.zone()))
+                        .<SortedLabelGroup>comparingInt(g -> zoneGroupPriority(g.zone()))
+                        .thenComparing(g -> g.zone().toUpperCase())
                         .thenComparing(g -> {
                             try {
                                 return Long.parseLong(g.sku());
@@ -76,6 +62,9 @@ public class LabelSorter {
     private String resolveZone(String sku, Map<String, String> skuToZone) {
         if (sku == null || sku.isEmpty()) {
             return UNKNOWN;
+        }
+        if (sku.contains("\n")) {
+            return "CARROS";
         }
         return skuToZone.getOrDefault(sku, UNKNOWN);
     }

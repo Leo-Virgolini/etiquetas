@@ -10,21 +10,25 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 
+import ar.com.leo.model.ExcelMapping;
+
 public class ExcelMappingReader {
 
-    public Map<String, String> readMapping(Path excelPath) throws IOException {
+    public ExcelMapping readMapping(Path excelPath) throws IOException {
         try (InputStream is = Files.newInputStream(excelPath);
              Workbook workbook = new XSSFWorkbook(is)) {
             return readFromWorkbook(workbook);
         }
     }
 
-    private Map<String, String> readFromWorkbook(Workbook workbook) {
-        Map<String, String> mapping = new HashMap<>();
+    private ExcelMapping readFromWorkbook(Workbook workbook) {
+        Map<String, String> zoneMapping = new HashMap<>();
+        Map<String, String> extCodeMapping = new HashMap<>();
         Sheet sheet = workbook.getSheetAt(0);
 
         int skuCol = -1;
         int zoneCol = -1;
+        int extCodeCol = -1;
         int headerRowIdx = -1;
 
         Row headerRow = sheet.getRow(2); // Fila 3 (índice 0)
@@ -38,6 +42,9 @@ public class ExcelMappingReader {
                 }
                 if (header.contains("unidad")) {
                     zoneCol = i;
+                }
+                if (header.contains("código externo")) {
+                    extCodeCol = i;
                 }
             }
             if (skuCol != -1 && zoneCol != -1) {
@@ -63,11 +70,21 @@ public class ExcelMappingReader {
             String zoneName = getCellStringValue(zoneCell).trim();
 
             if (!sku.isEmpty() && !zoneName.isEmpty()) {
-                mapping.put(sku, zoneName);
+                zoneMapping.put(sku, zoneName);
+            }
+
+            if (extCodeCol != -1) {
+                Cell extCodeCell = row.getCell(extCodeCol);
+                if (extCodeCell != null) {
+                    String extCode = getCellStringValue(extCodeCell).trim();
+                    if (!sku.isEmpty() && !extCode.isEmpty()) {
+                        extCodeMapping.put(sku, extCode);
+                    }
+                }
             }
         }
 
-        return mapping;
+        return new ExcelMapping(zoneMapping, extCodeMapping);
     }
 
     private String getCellStringValue(Cell cell) {

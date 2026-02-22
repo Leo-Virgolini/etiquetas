@@ -6,24 +6,32 @@
 
 <BorderPane xmlns="http://javafx.com/javafx" xmlns:fx="http://javafx.com/fxml"
             fx:controller="ar.com.leo.ui.MainController"
-            prefWidth="1100" prefHeight="900"
+            prefWidth="1400" prefHeight="900"
             stylesheets="@styles.css">
 
     <center>
-        <VBox spacing="0">
+        <VBox>
 
-            <!-- Excel compartido (arriba de los tabs) -->
-            <HBox spacing="10" alignment="CENTER_LEFT" style="-fx-padding: 12 15 12 15; -fx-background-color: #f0f0f0; -fx-border-color: #ddd; -fx-border-width: 0 0 1 0;">
-                <Label text="&#x1F4D7; Archivo Excel (zonas):" style="-fx-font-weight: bold;"/>
-                <TextField fx:id="excelFileField" HBox.hgrow="ALWAYS" editable="false"
-                           promptText="Mapeo SKU &#x2192; Zona (.xlsx)"/>
-                <Button text="&#x1F4C2; Seleccionar" onAction="#onSelectExcelFile"/>
-            </HBox>
+            <!-- Selectores de archivos Excel -->
+            <VBox fx:id="excelSelectorsBox">
+                <HBox spacing="10" alignment="CENTER_LEFT" style="-fx-padding: 12 15 12 15; -fx-background-color: #f0f0f0; -fx-border-color: #ddd; -fx-border-width: 0 0 1 0;">
+                    <Label text="&#x1F4D7; Archivo Excel (zonas):" style="-fx-font-weight: bold;"/>
+                    <TextField fx:id="excelFileField" HBox.hgrow="ALWAYS" editable="false"
+                               promptText="Mapeo SKU &#x2192; Zona (.xlsx)"/>
+                    <Button text="&#x1F4C2; Seleccionar" onAction="#onSelectExcelFile"/>
+                </HBox>
+                <HBox spacing="10" alignment="CENTER_LEFT" style="-fx-padding: 12 15 12 15; -fx-background-color: #f0f0f0; -fx-border-color: #ddd; -fx-border-width: 0 0 1 0;">
+                    <Label text="&#x1F4E6; Archivo Excel (combos):" style="-fx-font-weight: bold;"/>
+                    <TextField fx:id="comboExcelField" HBox.hgrow="ALWAYS" editable="false"
+                               promptText="Composición de combos (.xls/.xlsx)"/>
+                    <Button text="&#x1F4C2; Seleccionar" onAction="#onSelectComboExcelFile"/>
+                </HBox>
+            </VBox>
 
             <TabPane fx:id="tabPane" VBox.vgrow="NEVER">
                 <!-- Tab Archivo Local -->
-                <Tab text="&#x1F4C4; Archivo Local" closable="false">
-                    <VBox spacing="10" style="-fx-padding: 15;">
+                <Tab text="&#x1F4C4; Archivo Local" closable="false" styleClass="tab, tab-local">
+                    <VBox spacing="10" styleClass="tab-local-content" style="-fx-padding: 15;">
                         <HBox spacing="10" alignment="CENTER_LEFT">
                             <Label text="&#x1F4C4; Archivo ZPL:" prefWidth="130"/>
                             <TextField fx:id="zplFileField" HBox.hgrow="ALWAYS" editable="false"
@@ -37,8 +45,8 @@
                 </Tab>
 
                 <!-- Tab API MercadoLibre -->
-                <Tab text="&#x1F310; API MercadoLibre" closable="false">
-                    <VBox spacing="10" style="-fx-padding: 15;">
+                <Tab text="&#x1F310; API MercadoLibre" closable="false" styleClass="tab, tab-api">
+                    <VBox spacing="10" styleClass="tab-api-content" style="-fx-padding: 15;">
                         <HBox spacing="10" alignment="CENTER_LEFT">
                             <Label fx:id="meliStatusLabel" text="&#x26AA; Estado: No conectado" style="-fx-font-size: 13px;"/>
                         </HBox>
@@ -46,9 +54,9 @@
                             <Button fx:id="fetchOrdersBtn" text="&#x25B6; Paso 1: Obtener Ordenes" onAction="#onFetchMeliOrders"
                                     styleClass="action-button"/>
                             <Label text="Estado impresi&#xF3;n:"/>
-                            <ComboBox fx:id="estadoFilterCombo" prefWidth="150"/>
+                            <ComboBox fx:id="estadoFilterCombo" prefWidth="210"/>
                             <Label text="Despacho:"/>
-                            <ComboBox fx:id="despachoFilterCombo" prefWidth="180"/>
+                            <ComboBox fx:id="despachoFilterCombo" prefWidth="200"/>
                         </HBox>
                     </VBox>
                 </Tab>
@@ -58,43 +66,54 @@
             <HBox fx:id="statsBar" spacing="15" alignment="CENTER_LEFT" styleClass="stats-bar"
                   managed="false" visible="false">
                 <padding><Insets top="8" bottom="8" left="15" right="15"/></padding>
-                <Label fx:id="statsLabel" styleClass="stats-label" text=""/>
+                <Label fx:id="statsLabel" styleClass="stats-label" text="" HBox.hgrow="ALWAYS"/>
+                <TextField fx:id="searchField" promptText="&#x1F50D; Buscar por nro. de orden..." prefWidth="220"/>
             </HBox>
 
-            <!-- Tabla de ordenes (oculta inicialmente) -->
-            <TableView fx:id="orderTable" VBox.vgrow="ALWAYS" managed="false" visible="false">
-                <placeholder>
-                    <Label text="&#x1F4CB; Haga clic en 'Obtener Ordenes' para cargar las ordenes de ML" style="-fx-font-size: 14px; -fx-text-fill: #888;"/>
-                </placeholder>
-                <columns>
-                    <TableColumn fx:id="orderSelectCol" text="&#x2713;" prefWidth="45" minWidth="45" maxWidth="45"/>
-                    <TableColumn fx:id="orderZoneCol" text="Zona" prefWidth="80" minWidth="60" maxWidth="120"/>
-                    <TableColumn fx:id="orderSkuCol" text="SKU" prefWidth="100" minWidth="70" maxWidth="150"/>
-                    <TableColumn fx:id="orderDescCol" text="Producto" prefWidth="250"/>
-                    <TableColumn fx:id="orderQtyCol" text="Cant." prefWidth="60" minWidth="50" maxWidth="80"/>
-                    <TableColumn fx:id="orderStatusCol" text="Estado" prefWidth="100" minWidth="70" maxWidth="130"/>
-                    <TableColumn fx:id="orderSlaCol" text="Despacho" prefWidth="100" minWidth="80" maxWidth="150"/>
-                </columns>
-            </TableView>
+            <!-- Tablas + Progress Indicator centrado -->
+            <StackPane VBox.vgrow="ALWAYS">
+                <!-- Tabla de ordenes (oculta inicialmente) -->
+                <TableView fx:id="orderTable" managed="false" visible="false">
+                    <placeholder>
+                        <Label text="&#x1F4CB; Haga clic en 'Obtener Ordenes' para cargar las ordenes de ML" style="-fx-font-size: 14px; -fx-text-fill: #888;"/>
+                    </placeholder>
+                    <columns>
+                        <TableColumn fx:id="orderSelectCol" text="&#x2713;" prefWidth="45" minWidth="45" maxWidth="45"/>
+                        <TableColumn fx:id="orderIdCol" text="Orden" prefWidth="180" minWidth="140"/>
+                        <TableColumn fx:id="orderZoneCol" text="Zona" prefWidth="100" minWidth="60"/>
+                        <TableColumn fx:id="orderSkuCol" text="SKU" prefWidth="110" minWidth="70"/>
+                        <TableColumn fx:id="orderDescCol" text="Producto" prefWidth="350" minWidth="150"/>
+                        <TableColumn fx:id="orderQtyCol" text="Cant." prefWidth="60" minWidth="50" maxWidth="80"/>
+                        <TableColumn fx:id="orderStatusCol" text="Estado" prefWidth="170" minWidth="120"/>
+                        <TableColumn fx:id="orderSlaCol" text="Despacho" prefWidth="160" minWidth="100"/>
+                    </columns>
+                </TableView>
 
-            <!-- Tabla de etiquetas -->
-            <TableView fx:id="labelTable" VBox.vgrow="ALWAYS">
-                <placeholder>
-                    <Label text="&#x1F4E6; Cargue etiquetas ZPL para ver el resultado ordenado" style="-fx-font-size: 14px; -fx-text-fill: #888;"/>
-                </placeholder>
-                <columns>
-                    <TableColumn fx:id="zoneCol" text="Zona" prefWidth="80" minWidth="60" maxWidth="120"/>
-                    <TableColumn fx:id="skuCol" text="SKU" prefWidth="100" minWidth="70" maxWidth="150"/>
-                    <TableColumn fx:id="descCol" text="Producto" prefWidth="300"/>
-                    <TableColumn fx:id="detailsCol" text="Detalles" prefWidth="300"/>
-                    <TableColumn fx:id="countCol" text="Cant." prefWidth="60" minWidth="50" maxWidth="80"/>
-                </columns>
-            </TableView>
+                <!-- Tabla de etiquetas -->
+                <TableView fx:id="labelTable">
+                    <placeholder>
+                        <Label text="&#x1F4E6; Cargue etiquetas ZPL para ver el resultado ordenado" style="-fx-font-size: 14px; -fx-text-fill: #888;"/>
+                    </placeholder>
+                    <columns>
+                        <TableColumn fx:id="zoneCol" text="Zona" prefWidth="100" minWidth="60"/>
+                        <TableColumn fx:id="skuCol" text="SKU" prefWidth="110" minWidth="70"/>
+                        <TableColumn fx:id="descCol" text="Producto" prefWidth="400" minWidth="150"/>
+                        <TableColumn fx:id="detailsCol" text="Detalles" prefWidth="400" minWidth="150"/>
+                        <TableColumn fx:id="countCol" text="Cant." prefWidth="60" minWidth="50" maxWidth="80"/>
+                    </columns>
+                </TableView>
+
+                <!-- Progress Indicator centrado sobre la tabla -->
+                <ProgressIndicator fx:id="progressIndicator" prefWidth="64" prefHeight="64"
+                                   visible="false" managed="false"
+                                   StackPane.alignment="CENTER"/>
+            </StackPane>
 
             <!-- Botones de accion -->
             <HBox spacing="15" alignment="CENTER_RIGHT" style="-fx-padding: 10 15 10 15;">
-                <ProgressIndicator fx:id="progressIndicator" prefWidth="24" prefHeight="24" visible="false" managed="false"/>
-                <Button fx:id="downloadLabelsBtn" text="&#x1F3F7; Paso 2: Descargar Etiquetas" onAction="#onDownloadSelectedLabels"
+                <Button fx:id="backToOrdersBtn" text="&#x2B05; Volver a &#xF3;rdenes buscadas" onAction="#onBackToOrders"
+                        styleClass="action-button" visible="false" managed="false"/>
+                <Button fx:id="downloadLabelsBtn" text="&#x1F4E5; Paso 2: Descargar Etiquetas" onAction="#onDownloadSelectedLabels"
                         styleClass="action-button" disable="true"/>
                 <Button fx:id="saveFileBtn" text="&#x1F4BE; Guardar Archivo" onAction="#onSaveFile" styleClass="action-button" disable="true"/>
                 <Button fx:id="printDirectBtn" text="&#x1F5A8; Imprimir Directo" onAction="#onPrintDirect" styleClass="action-button" disable="true"/>
