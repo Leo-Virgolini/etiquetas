@@ -134,10 +134,20 @@ public class MainController {
         labelTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         labelTable.getSelectionModel().setSelectionMode(javafx.scene.control.SelectionMode.MULTIPLE);
         zoneCol.setCellValueFactory(new PropertyValueFactory<>("zone"));
+        zoneCol.setCellFactory(col -> centeredCell());
         skuCol.setCellValueFactory(new PropertyValueFactory<>("sku"));
+        skuCol.setCellFactory(col -> centeredCell());
         descCol.setCellValueFactory(new PropertyValueFactory<>("productDescription"));
         detailsCol.setCellValueFactory(new PropertyValueFactory<>("details"));
         countCol.setCellValueFactory(new PropertyValueFactory<>("quantity"));
+        countCol.setCellFactory(col -> new TableCell<>() {
+            @Override
+            protected void updateItem(Integer item, boolean empty) {
+                super.updateItem(item, empty);
+                setAlignment(Pos.CENTER);
+                setText(empty || item == null ? null : String.valueOf(item));
+            }
+        });
 
         orderTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         orderTable.getSelectionModel().setSelectionMode(javafx.scene.control.SelectionMode.MULTIPLE);
@@ -163,8 +173,10 @@ public class MainController {
             @Override
             protected void updateItem(String status, boolean empty) {
                 super.updateItem(status, empty);
+                setAlignment(Pos.CENTER);
                 if (empty || status == null || status.isEmpty()) {
                     setText(null);
+                    setStyle("");
                 } else {
                     String label = switch (status) {
                         case "ready_to_print" -> "\ud83d\udfe1 Pendiente";
@@ -177,29 +189,48 @@ public class MainController {
                         default -> "\u2753 " + status;
                     };
                     setText(label);
+                    String bg = switch (status) {
+                        case "ready_to_print" -> "-fx-background-color: #C8E6C9;";
+                        case "printed", "ready_for_dropoff", "ready_for_pickup" -> "-fx-background-color: #FFCDD2;";
+                        default -> "";
+                    };
+                    setStyle(bg);
                 }
             }
         });
         orderSlaCol.setCellValueFactory(new PropertyValueFactory<>("slaDate"));
 
         // Celdas multilínea para columnas que pueden tener varios productos
-        orderSkuCol.setCellFactory(col -> newWrappingCell());
-        orderDescCol.setCellFactory(col -> newWrappingCell());
-        orderQtyCol.setCellFactory(col -> newWrappingCell());
-
-        // Ajustar altura de fila según cantidad de productos
-        orderTable.setRowFactory(tv -> new TableRow<>() {
+        orderIdCol.setCellFactory(col -> new TableCell<>() {
+            private final Label prefixLabel = new Label();
+            private final Label suffixLabel = new Label();
+            private final HBox box = new HBox(0, prefixLabel, suffixLabel);
+            {
+                suffixLabel.setStyle("-fx-font-weight: bold;");
+                box.setAlignment(Pos.CENTER);
+                setContentDisplay(javafx.scene.control.ContentDisplay.GRAPHIC_ONLY);
+            }
             @Override
-            protected void updateItem(OrderTableRow item, boolean empty) {
+            protected void updateItem(String item, boolean empty) {
                 super.updateItem(item, empty);
                 if (empty || item == null) {
-                    setPrefHeight(Control.USE_COMPUTED_SIZE);
+                    setGraphic(null);
                 } else {
-                    int lines = item.getProductCount();
-                    setPrefHeight(lines > 1 ? lines * 22 + 10 : Control.USE_COMPUTED_SIZE);
+                    if (item.length() > 5) {
+                        prefixLabel.setText(item.substring(0, item.length() - 5));
+                        suffixLabel.setText(item.substring(item.length() - 5));
+                    } else {
+                        prefixLabel.setText("");
+                        suffixLabel.setText(item);
+                    }
+                    setGraphic(box);
                 }
             }
         });
+        orderZoneCol.setCellFactory(col -> centeredCell());
+        orderSkuCol.setCellFactory(col -> centeredCell());
+        orderQtyCol.setCellFactory(col -> centeredCell());
+        orderSlaCol.setCellFactory(col -> centeredCell());
 
         // Centrar headers de ambas tablas
         centerColumnHeaders(orderTable);
@@ -296,12 +327,20 @@ public class MainController {
         }
     }
 
-    private ExcelMapping loadExcelMapping() throws Exception {
+    private void validateExcelFiles() {
         String excelPath = excelFileField.getText();
         if (excelPath == null || excelPath.isBlank()) {
-            throw new IllegalArgumentException("Seleccione un archivo Excel con mapeo SKU \u2192 Zona.");
+            throw new IllegalArgumentException("Seleccione el archivo Excel de stock (SKU \u2192 Zona).");
         }
-        return excelReader.readMapping(Path.of(excelPath));
+        String comboPath = comboExcelField.getText();
+        if (comboPath == null || comboPath.isBlank()) {
+            throw new IllegalArgumentException("Seleccione el archivo Excel de composición de combos.");
+        }
+    }
+
+    private ExcelMapping loadExcelMapping() throws Exception {
+        validateExcelFiles();
+        return excelReader.readMapping(Path.of(excelFileField.getText()));
     }
 
     @FXML
@@ -604,23 +643,13 @@ public class MainController {
         }
     }
 
-    private static <T> TableCell<T, String> newWrappingCell() {
+    private static <T> TableCell<T, String> centeredCell() {
         return new TableCell<>() {
-            private final Label label = new Label();
-            {
-                label.setWrapText(true);
-                label.setMaxWidth(Double.MAX_VALUE);
-                setGraphic(label);
-                setContentDisplay(javafx.scene.control.ContentDisplay.GRAPHIC_ONLY);
-            }
             @Override
             protected void updateItem(String item, boolean empty) {
                 super.updateItem(item, empty);
-                if (empty || item == null) {
-                    label.setText(null);
-                } else {
-                    label.setText(item);
-                }
+                setAlignment(Pos.CENTER);
+                setText(empty || item == null ? null : item);
             }
         };
     }

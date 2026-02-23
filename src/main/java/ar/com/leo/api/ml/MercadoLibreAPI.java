@@ -54,8 +54,8 @@ public class MercadoLibreAPI {
     private static final Object TOKEN_LOCK = new Object();
     private static final ObjectMapper mapper = JsonMapper.shared();
     private static final HttpClient httpClient = HttpClient.newHttpClient();
-    private static final HttpRetryHandler retryHandler = new HttpRetryHandler(httpClient, 30000L, 10, MercadoLibreAPI::verificarTokens);
-    private static final ExecutorService executor = Executors.newFixedThreadPool(10);
+    private static final HttpRetryHandler retryHandler = new HttpRetryHandler(httpClient, 30000L, 25, MercadoLibreAPI::verificarTokens);
+    private static final ExecutorService executor = Executors.newFixedThreadPool(25);
     private static final ZplParser zplParser = new ZplParser();
     private static MLCredentials mlCredentials;
     private static volatile TokensML tokens;

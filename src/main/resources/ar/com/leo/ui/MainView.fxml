@@ -15,7 +15,7 @@
             <!-- Selectores de archivos Excel -->
             <VBox fx:id="excelSelectorsBox">
                 <HBox spacing="10" alignment="CENTER_LEFT" style="-fx-padding: 12 15 12 15; -fx-background-color: #f0f0f0; -fx-border-color: #ddd; -fx-border-width: 0 0 1 0;">
-                    <Label text="&#x1F4D7; Archivo Excel (zonas):" style="-fx-font-weight: bold;"/>
+                    <Label text="&#x1F4D7; Archivo Excel (stock):" style="-fx-font-weight: bold;"/>
                     <TextField fx:id="excelFileField" HBox.hgrow="ALWAYS" editable="false"
                                promptText="Mapeo SKU &#x2192; Zona (.xlsx)"/>
                     <Button text="&#x1F4C2; Seleccionar" onAction="#onSelectExcelFile"/>
@@ -78,14 +78,14 @@
                         <Label text="&#x1F4CB; Haga clic en 'Obtener Ordenes' para cargar las ordenes de ML" style="-fx-font-size: 14px; -fx-text-fill: #888;"/>
                     </placeholder>
                     <columns>
-                        <TableColumn fx:id="orderSelectCol" text="&#x2713;" prefWidth="45" minWidth="45" maxWidth="45"/>
-                        <TableColumn fx:id="orderIdCol" text="Orden" prefWidth="180" minWidth="140"/>
-                        <TableColumn fx:id="orderZoneCol" text="Zona" prefWidth="100" minWidth="60"/>
-                        <TableColumn fx:id="orderSkuCol" text="SKU" prefWidth="110" minWidth="70"/>
-                        <TableColumn fx:id="orderDescCol" text="Producto" prefWidth="350" minWidth="150"/>
-                        <TableColumn fx:id="orderQtyCol" text="Cant." prefWidth="60" minWidth="50" maxWidth="80"/>
-                        <TableColumn fx:id="orderStatusCol" text="Estado" prefWidth="170" minWidth="120"/>
-                        <TableColumn fx:id="orderSlaCol" text="Despacho" prefWidth="160" minWidth="100"/>
+                        <TableColumn fx:id="orderSelectCol" text="&#x2713;" prefWidth="40" minWidth="40" maxWidth="40"/>
+                        <TableColumn fx:id="orderIdCol" text="Orden" prefWidth="150" minWidth="120"/>
+                        <TableColumn fx:id="orderZoneCol" text="Zona" prefWidth="70" minWidth="50"/>
+                        <TableColumn fx:id="orderSkuCol" text="SKU" prefWidth="100" minWidth="70"/>
+                        <TableColumn fx:id="orderDescCol" text="Producto" prefWidth="550" minWidth="250"/>
+                        <TableColumn fx:id="orderQtyCol" text="Cant." prefWidth="50" minWidth="40" maxWidth="60"/>
+                        <TableColumn fx:id="orderStatusCol" text="Estado" prefWidth="150" minWidth="120"/>
+                        <TableColumn fx:id="orderSlaCol" text="Despacho" prefWidth="140" minWidth="100"/>
                     </columns>
                 </TableView>
 
