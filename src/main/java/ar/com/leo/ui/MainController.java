@@ -31,7 +31,6 @@ import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
-import javafx.scene.text.Text;
 import javafx.stage.FileChooser;
 
 import javax.print.PrintService;
@@ -67,9 +66,13 @@ public class MainController {
     @FXML
     private HBox statsBar;
     @FXML
+    private HBox searchBar;
+    @FXML
     private TextField searchField;
     @FXML
     private TableView<LabelTableRow> labelTable;
+    @FXML
+    private TableColumn<LabelTableRow, String> labelOrderCol;
     @FXML
     private TableColumn<LabelTableRow, String> zoneCol;
     @FXML
@@ -88,6 +91,8 @@ public class MainController {
     private Button downloadLabelsBtn;
     @FXML
     private Button saveFileBtn;
+    @FXML
+    private Button comboSheetBtn;
     @FXML
     private Button printDirectBtn;
     @FXML
@@ -123,16 +128,45 @@ public class MainController {
     private static final String PREF_EXCEL_PATH = "excelFilePath";
     private static final String PREF_COMBO_EXCEL_PATH = "comboExcelFilePath";
     private static final String PREF_ZPL_DIR = "zplLastDir";
+    private static final String PREF_SAVE_DIR = "saveLastDir";
 
     private boolean meliInitialized = false;
     private SortResult currentResult;
     private List<OrdenML> fetchedOrders;
+    private Set<Long> turboShipmentIds = Set.of();
     private FilteredList<OrderTableRow> filteredOrders;
 
     @FXML
     public void initialize() {
         labelTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         labelTable.getSelectionModel().setSelectionMode(javafx.scene.control.SelectionMode.MULTIPLE);
+        labelOrderCol.setCellValueFactory(new PropertyValueFactory<>("orderIds"));
+        labelOrderCol.setCellFactory(col -> new TableCell<>() {
+            private final Label prefixLabel = new Label();
+            private final Label suffixLabel = new Label();
+            private final HBox box = new HBox(0, prefixLabel, suffixLabel);
+            {
+                suffixLabel.setStyle("-fx-font-weight: bold;");
+                box.setAlignment(Pos.CENTER);
+                setContentDisplay(javafx.scene.control.ContentDisplay.GRAPHIC_ONLY);
+            }
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null || item.isEmpty()) {
+                    setGraphic(null);
+                } else {
+                    if (item.length() > 5) {
+                        prefixLabel.setText(item.substring(0, item.length() - 5));
+                        suffixLabel.setText(item.substring(item.length() - 5));
+                    } else {
+                        prefixLabel.setText("");
+                        suffixLabel.setText(item);
+                    }
+                    setGraphic(box);
+                }
+            }
+        });
         zoneCol.setCellValueFactory(new PropertyValueFactory<>("zone"));
         zoneCol.setCellFactory(col -> centeredCell());
         skuCol.setCellValueFactory(new PropertyValueFactory<>("sku"));
@@ -411,13 +445,9 @@ public class MainController {
                         substatusMap.put(shipId, orden.getShippingSubstatus());
                     }
                 }
-                AppLogger.info("Controller - " + ordenes.size() + " órdenes, " + shipmentIds.size() + " shipments. soloSlaHoy=" + soloSlaHoy);
-
                 // Solo consultar SLAs (fecha de despacho) en paralelo
                 if (!shipmentIds.isEmpty()) {
-                    AppLogger.info("Controller - Consultando SLA de " + shipmentIds.size() + " envíos...");
                     slaMap = MercadoLibreAPI.obtenerSlasParalelo(shipmentIds);
-                    AppLogger.info("Controller - SLAs obtenidos: " + slaMap.size() + " envíos");
                 }
 
                 if (soloSlaHoy && !shipmentIds.isEmpty()) {
@@ -441,7 +471,6 @@ public class MainController {
                             filtradas.add(orden); // SLA hoy o antes
                         }
                     }
-                    AppLogger.info("Controller - Filtro SLA: " + filtradas.size() + " de " + ordenes.size() + " órdenes");
                     ordenes = filtradas;
                 }
 
@@ -463,14 +492,22 @@ public class MainController {
                     ordenes = filtradasEstado;
                 }
 
+                // Extraer shipment IDs turbo
+                Set<Long> turboIds = new HashSet<>();
+                for (var slaEntry : slaMap.entrySet()) {
+                    if (slaEntry.getValue().turbo()) {
+                        turboIds.add(slaEntry.getKey());
+                    }
+                }
                 final List<OrdenML> finalOrdenes = ordenes;
                 final Map<Long, MercadoLibreAPI.SlaInfo> finalSlaMap = slaMap;
                 final Map<Long, String> finalSubstatusMap = substatusMap;
-                AppLogger.info("Controller - Mostrando " + finalOrdenes.size() + " órdenes en tabla");
+                final Set<Long> finalTurboIds = turboIds;
 
                 Platform.runLater(() -> {
                     setLoading(false);
                     fetchedOrders = finalOrdenes;
+                    turboShipmentIds = finalTurboIds;
                     displayOrders(finalOrdenes, excelMapping.skuToZone(), finalSlaMap, finalSubstatusMap);
                     showOrderTable();
                 });
@@ -518,8 +555,18 @@ public class MainController {
 
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
         confirm.setTitle("Confirmar descarga");
-        confirm.setHeaderText("Se descargarán " + seleccionadas.size() + " etiqueta(s)");
-        confirm.setContentText("Al descargar, el estado de las órdenes pasará a \"Impresa\" en MercadoLibre.\n\n¿Desea continuar?");
+        long totalEtiquetas = seleccionadas.stream()
+                .map(OrdenML::getShipmentId)
+                .filter(id -> id != null && id > 0)
+                .distinct()
+                .count();
+        confirm.setHeaderText("Se descargarán " + totalEtiquetas + " etiqueta(s)");
+        boolean hayPendientes = seleccionadas.stream()
+                .anyMatch(o -> "ready_to_print".equals(o.getShippingSubstatus()));
+        String advertencia = hayPendientes
+                ? "Al descargar, el estado de las órdenes pendientes pasará a \"Impresa\" en MercadoLibre.\n\n¿Desea continuar?"
+                : "¿Desea continuar?";
+        confirm.setContentText(advertencia);
         confirm.setGraphic(new javafx.scene.image.ImageView(
                 new javafx.scene.image.Image(getClass().getResourceAsStream("/ar/com/leo/ui/icons8-señal-de-advertencia-general-100.png"), 48, 48, true, true)));
         ((javafx.stage.Stage) confirm.getDialogPane().getScene().getWindow()).getIcons().add(
@@ -531,7 +578,7 @@ public class MainController {
 
         new Thread(() -> {
             try {
-                List<ZplLabel> labels = MercadoLibreAPI.descargarEtiquetasZplParaOrdenes(seleccionadas);
+                List<ZplLabel> labels = MercadoLibreAPI.descargarEtiquetasZplParaOrdenes(seleccionadas, turboShipmentIds);
                 SortResult result = injectZplHeaders(
                         labelSorter.sort(labels, excelMapping.skuToZone()), excelMapping);
 
@@ -560,14 +607,22 @@ public class MainController {
         FileChooser fc = new FileChooser();
         fc.setTitle("Guardar etiquetas ordenadas");
         fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Archivo ZPL", "*.txt"));
-        fc.setInitialFileName("etiquetas_ordenadas.txt");
+        String fechaHora = java.time.LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"));
+        fc.setInitialFileName("etiquetas_ordenadas_" + fechaHora + ".txt");
+        String lastSaveDir = prefs.get(PREF_SAVE_DIR, "");
+        if (!lastSaveDir.isBlank()) {
+            File dir = new File(lastSaveDir);
+            if (dir.isDirectory()) {
+                fc.setInitialDirectory(dir);
+            }
+        }
         File file = fc.showSaveDialog(getWindow());
 
         if (file != null) {
+            prefs.put(PREF_SAVE_DIR, file.getParent());
             try {
                 fileSaver.save(currentResult.sortedFlatList(), file.toPath());
                 AlertHelper.showInfo("\ud83d\udcbe Guardado", "Archivo guardado en: " + file.getAbsolutePath());
-                showComboSheetIfNeeded();
             } catch (Exception e) {
                 AlertHelper.showError("Error al guardar", e.getMessage(), e);
             }
@@ -581,6 +636,63 @@ public class MainController {
             return;
         }
 
+        // 1. Seleccionar zonas a imprimir
+        Map<String, Long> zoneCounts = new LinkedHashMap<>();
+        for (SortedLabelGroup group : currentResult.groups()) {
+            zoneCounts.merge(group.zone(), (long) group.labels().size(), Long::sum);
+        }
+
+        Dialog<List<String>> zoneDialog = new Dialog<>();
+        zoneDialog.setTitle("Seleccionar zonas");
+        zoneDialog.setHeaderText("Seleccione las zonas a imprimir:");
+        zoneDialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+        VBox zoneBox = new VBox(8);
+        zoneBox.setStyle("-fx-padding: 10;");
+        List<CheckBox> checkBoxes = new ArrayList<>();
+        for (var entry : zoneCounts.entrySet()) {
+            CheckBox cb = new CheckBox(entry.getKey() + "  (" + entry.getValue() + " etiquetas)");
+            cb.setSelected(true);
+            cb.setUserData(entry.getKey());
+            checkBoxes.add(cb);
+            zoneBox.getChildren().add(cb);
+        }
+
+        Button toggleBtn = new Button("Deseleccionar todas");
+        toggleBtn.setOnAction(e -> {
+            boolean allSelected = checkBoxes.stream().allMatch(CheckBox::isSelected);
+            checkBoxes.forEach(cb -> cb.setSelected(!allSelected));
+            toggleBtn.setText(allSelected ? "Seleccionar todas" : "Deseleccionar todas");
+        });
+        zoneBox.getChildren().add(toggleBtn);
+
+        zoneDialog.getDialogPane().setContent(zoneBox);
+        zoneDialog.setResultConverter(btn -> {
+            if (btn == ButtonType.OK) {
+                return checkBoxes.stream()
+                        .filter(CheckBox::isSelected)
+                        .map(cb -> (String) cb.getUserData())
+                        .toList();
+            }
+            return null;
+        });
+
+        Optional<List<String>> zonesResult = zoneDialog.showAndWait();
+        if (zonesResult.isEmpty() || zonesResult.get().isEmpty()) return;
+        Set<String> selectedZones = new LinkedHashSet<>(zonesResult.get());
+
+        // Filtrar etiquetas por zonas seleccionadas
+        List<ZplLabel> labelsToPrint = currentResult.groups().stream()
+                .filter(g -> selectedZones.contains(g.zone()))
+                .flatMap(g -> g.labels().stream())
+                .toList();
+
+        if (labelsToPrint.isEmpty()) {
+            AlertHelper.showError("Error", "No hay etiquetas en las zonas seleccionadas.");
+            return;
+        }
+
+        // 2. Seleccionar impresora
         List<PrintService> printers = printerDiscovery.findAll();
         if (printers.isEmpty()) {
             AlertHelper.showError("Error", "No se encontraron impresoras.");
@@ -591,7 +703,7 @@ public class MainController {
                 printers.getFirst().getName(),
                 printers.stream().map(PrintService::getName).toList());
         dialog.setTitle("Seleccionar impresora");
-        dialog.setHeaderText("Seleccione la impresora para enviar las etiquetas:");
+        dialog.setHeaderText("Seleccione la impresora para enviar " + labelsToPrint.size() + " etiqueta(s):");
 
         Optional<String> selected = dialog.showAndWait();
         if (selected.isEmpty()) return;
@@ -604,43 +716,58 @@ public class MainController {
         if (selectedPrinter == null) return;
 
         try {
-            printerService.printViaPrintService(currentResult.sortedFlatList(), selectedPrinter);
-            AlertHelper.showInfo("\ud83d\udda8 Impresi\u00f3n", "Etiquetas enviadas a " + selectedPrinter.getName());
+            printerService.printViaPrintService(labelsToPrint, selectedPrinter);
+            AlertHelper.showInfo("\ud83d\udda8 Impresi\u00f3n", labelsToPrint.size() + " etiquetas enviadas a " + selectedPrinter.getName());
             showComboSheetIfNeeded();
         } catch (Exception e) {
             AlertHelper.showError("Error al imprimir", e.getMessage(), e);
         }
     }
 
-    private void showComboSheetIfNeeded() {
+    @FXML
+    private void onShowComboSheet() {
+        showComboSheetIfNeeded();
+    }
+
+    private List<ComboProduct> findMatchingCombos() {
         String comboPath = comboExcelField.getText();
-        if (comboPath == null || comboPath.isBlank()) return;
-        if (currentResult == null || currentResult.groups().isEmpty()) return;
+        if (comboPath == null || comboPath.isBlank()) return List.of();
+        if (currentResult == null || currentResult.groups().isEmpty()) return List.of();
 
         try {
             Map<String, ComboProduct> allCombos = comboExcelReader.read(Path.of(comboPath));
-            if (allCombos.isEmpty()) return;
+            if (allCombos.isEmpty()) return List.of();
 
-            // Recolectar SKUs del lote actual
+            // Recolectar SKUs del lote actual (separar multi-SKU de CARROS)
             Set<String> batchSkus = new HashSet<>();
             for (SortedLabelGroup group : currentResult.groups()) {
-                batchSkus.add(group.sku());
+                for (String sku : group.sku().split("\n")) {
+                    String trimmed = sku.trim();
+                    if (!trimmed.isEmpty()) batchSkus.add(trimmed);
+                }
             }
 
-            // Filtrar combos presentes en el lote
             List<ComboProduct> matchingCombos = new ArrayList<>();
             for (var entry : allCombos.entrySet()) {
                 if (batchSkus.contains(entry.getKey())) {
                     matchingCombos.add(entry.getValue());
                 }
             }
-
-            if (!matchingCombos.isEmpty()) {
-                new ComboPrintDialog(getWindow(), matchingCombos).show();
-            }
+            matchingCombos.sort(Comparator.comparing(ComboProduct::codigoCompuesto));
+            return matchingCombos;
         } catch (Exception e) {
             AppLogger.warn("Error al leer Excel de combos: " + e.getMessage());
+            return List.of();
         }
+    }
+
+    private void showComboSheetIfNeeded() {
+        List<ComboProduct> combos = findMatchingCombos();
+        if (combos.isEmpty()) {
+            AlertHelper.showInfo("Combos", "No se encontraron combos para las etiquetas actuales.");
+            return;
+        }
+        new ComboPrintDialog(getWindow(), combos).show();
     }
 
     private static <T> TableCell<T, String> centeredCell() {
@@ -715,8 +842,10 @@ public class MainController {
         orderTable.setDisable(loading);
         labelTable.setDisable(loading);
         statsBar.setDisable(loading);
+        searchBar.setDisable(loading);
         downloadLabelsBtn.setDisable(loading);
         saveFileBtn.setDisable(loading);
+        comboSheetBtn.setDisable(loading);
         printDirectBtn.setDisable(loading);
         backToOrdersBtn.setDisable(loading);
         searchField.setDisable(loading);
@@ -734,6 +863,7 @@ public class MainController {
         boolean hayOrdenes = !orderTable.getItems().isEmpty();
         downloadLabelsBtn.setDisable(!hayOrdenes);
         saveFileBtn.setDisable(true);
+        comboSheetBtn.setDisable(true);
         printDirectBtn.setDisable(true);
         backToOrdersBtn.setVisible(false);
         backToOrdersBtn.setManaged(false);
@@ -747,6 +877,7 @@ public class MainController {
         downloadLabelsBtn.setDisable(true);
         boolean hayEtiquetas = currentResult != null && !currentResult.groups().isEmpty();
         saveFileBtn.setDisable(!hayEtiquetas);
+        comboSheetBtn.setDisable(!hayEtiquetas);
         printDirectBtn.setDisable(!hayEtiquetas);
         // Mostrar botón volver solo si hay órdenes cargadas
         boolean hayOrdenes = !orderTable.getItems().isEmpty();
@@ -818,10 +949,28 @@ public class MainController {
                 }
             }
 
-            // Determinar zona
-            int totalItems = group.stream().mapToInt(o -> o.getItems().size()).sum();
+            // Detectar si el envío es turbo
+            boolean esTurbo = false;
+            for (OrdenML o : group) {
+                Long shipId = o.getShipmentId();
+                if (shipId != null && slaMap.containsKey(shipId) && slaMap.get(shipId).turbo()) {
+                    esTurbo = true;
+                    break;
+                }
+            }
+
+            // Determinar zona: TURBOS si es turbo, CARROS si hay 2+ SKUs distintos
+            Set<String> distinctSkus = new HashSet<>();
+            for (OrdenML o : group) {
+                for (Venta v : o.getItems()) {
+                    String s = v.getSku() != null ? v.getSku() : "";
+                    if (!s.isEmpty()) distinctSkus.add(s);
+                }
+            }
             String zone;
-            if (totalItems > 1 || group.size() > 1) {
+            if (esTurbo) {
+                zone = "TURBOS";
+            } else if (distinctSkus.size() > 1) {
                 zone = "CARROS";
             } else {
                 Venta firstItem = firstOrden.getItems().getFirst();
@@ -833,15 +982,16 @@ public class MainController {
                     descJoiner.toString(), qtyJoiner.toString(), status, slaDate, group));
         }
 
-        // Prioridad: J* (J1,J2,J3…), T* (T1,T2,T3…), COMBOS, CARROS, resto
+        // Prioridad: J*, T*, COMBOS, CARROS, TURBOS, RETIROS, resto
         rows.sort(Comparator
                 .<OrderTableRow, Integer>comparing(r -> {
                     String z = r.getZone().toUpperCase();
                     if (z.startsWith("J")) return 0;
+                    if (z.startsWith("TURBOS")) return 4;
                     if (z.startsWith("T")) return 1;
                     if (z.startsWith("COMBOS")) return 2;
                     if (z.startsWith("CARROS")) return 3;
-                    if (z.startsWith("RETIROS")) return 4;
+                    if (z.startsWith("RETIROS")) return 5;
                     return Integer.MAX_VALUE;
                 })
                 .thenComparing(r -> r.getZone().toUpperCase())
@@ -861,41 +1011,52 @@ public class MainController {
         int printedCount = 0;
         int readyCount = 0;
         int totalProductos = 0;
+        Map<String, Integer> countByZone = new LinkedHashMap<>();
+        Set<String> uniqueSkus = new HashSet<>();
         for (OrderTableRow r : rows) {
             if ("printed".equals(r.getStatus())) printedCount++;
             else readyCount++;
             totalProductos += r.getProductCount();
+            countByZone.merge(r.getZone(), 1, Integer::sum);
+            for (String s : r.getSku().split("\n")) {
+                String trimmed = s.trim();
+                if (!trimmed.isEmpty()) uniqueSkus.add(trimmed);
+            }
         }
         final int printed = printedCount;
         final int readyToPrint = readyCount;
         final int ordCount = totalOrdenes;
         final int prodCount = totalProductos;
-        if (rows.isEmpty()) {
-            statsLabel.setText("No hay ordenes para mostrar");
-        } else {
+        final int skuCount = uniqueSkus.size();
+
+        Runnable updateStats = () -> {
+            long selected = orderTable.getItems().stream().filter(OrderTableRow::isSelected).count();
             StringJoiner sj = new StringJoiner("  \u2502  ");
             sj.add("Ordenes: " + ordCount);
             sj.add("Productos: " + prodCount);
-            sj.add("Seleccionados: " + rows.size());
+            sj.add("SKUs: " + skuCount);
+            sj.add("Seleccionados: " + selected);
             if (readyToPrint > 0) sj.add("Pendientes: " + readyToPrint);
             if (printed > 0) sj.add("Impresas: " + printed);
+            for (Map.Entry<String, Integer> entry : countByZone.entrySet()) {
+                if (entry.getValue() > 0) sj.add(entry.getKey() + ": " + entry.getValue());
+            }
             statsLabel.setText(sj.toString());
+        };
+
+        if (rows.isEmpty()) {
+            statsLabel.setText("No hay ordenes para mostrar");
+        } else {
+            updateStats.run();
         }
         statsBar.setVisible(true);
         statsBar.setManaged(true);
+        searchBar.setVisible(true);
+        searchBar.setManaged(true);
 
         // Actualizar stats cuando cambia la selección
         for (OrderTableRow r : rows) {
-            r.selectedProperty().addListener((obs, oldVal, newVal) -> {
-                long selected = orderTable.getItems().stream().filter(OrderTableRow::isSelected).count();
-                StringJoiner sj = new StringJoiner("  \u2502  ");
-                sj.add("Ordenes: " + ordCount);
-                sj.add("Productos: " + prodCount);
-                sj.add("Seleccionados: " + selected);
-                if (readyToPrint > 0) sj.add("Pendientes: " + readyToPrint);
-                if (printed > 0) sj.add("Impresas: " + printed);
-                statsLabel.setText(sj.toString());
-            });
+            r.selectedProperty().addListener((obs, oldVal, newVal) -> updateStats.run());
         }
     }
 
@@ -903,59 +1064,66 @@ public class MainController {
             "(\\^FO(\\d+),(\\d+)\\^A0N,70,70\\^FB160,1,0,C\\^FD)(\\d+)(\\^FS)");
     private static final Pattern FO_PATTERN = Pattern.compile("\\^FO(\\d+),(\\d+)");
     private static final Pattern FONT_PATTERN = Pattern.compile("\\^A0N,(\\d+),(\\d+)");
+    private static final Pattern FB_PATTERN = Pattern.compile("\\^FB(\\d+),(\\d+)");
 
     private SortResult injectZplHeaders(SortResult result, ExcelMapping excelMapping) {
         Map<String, String> skuToZone = excelMapping.skuToZone();
         Map<String, String> skuToExtCode = excelMapping.skuToExternalCode();
-        AppLogger.info("injectZplHeaders - extCodeMap tiene " + skuToExtCode.size() + " entradas");
         List<SortedLabelGroup> newGroups = new ArrayList<>();
         for (SortedLabelGroup group : result.groups()) {
             String zone = group.zone();
             String sku = group.sku();
-            String extCode = "";
-            if (sku != null && sku.contains("\n")) {
-                // Multi-SKU: buscar cada SKU individual
-                for (String s : sku.split("\n")) {
-                    String ec = skuToExtCode.getOrDefault(s.trim(), "");
-                    if (!ec.isEmpty()) {
-                        extCode = ec;
-                        break;
-                    }
-                }
+            String zoneText;
+            if ("CARROS".equals(zone)) {
+                zoneText = "ZONA: CARROS";
             } else {
-                extCode = skuToExtCode.getOrDefault(sku, "");
+                String extCode = skuToExtCode.getOrDefault(sku, "");
+                zoneText = "ZONA: " + zone + " | COD.EXT.: " + (extCode.isEmpty() ? "-" : extCode);
             }
-            AppLogger.info("injectZplHeaders - SKU='" + sku + "' -> extCode='" + extCode + "'");
-            String zoneText = "ZONA: " + zone + " | COD.EXT.: " + (extCode.isEmpty() ? "-" : extCode);
             List<ZplLabel> newLabels = new ArrayList<>();
             for (ZplLabel label : group.labels()) {
                 String raw = label.rawZpl();
-                // Insertar ZONA y COD.EXT. en una nueva línea debajo del último campo SKU
+                // Insertar ZONA y COD.EXT. debajo del último campo SKU (o del último campo de producto para packs)
                 int lastSkuIdx = raw.lastIndexOf("SKU:");
+                int anchorFoIdx = -1;
+                int anchorFsIdx = -1;
+
                 if (lastSkuIdx >= 0) {
-                    int fsIdx = raw.indexOf("^FS", lastSkuIdx);
-                    // Buscar el ^FO que posiciona el campo del SKU para obtener coordenadas
-                    int foIdx = raw.lastIndexOf("^FO", lastSkuIdx);
-                    if (fsIdx >= 0 && foIdx >= 0) {
-                        Matcher foMatcher = FO_PATTERN.matcher(raw.substring(foIdx, lastSkuIdx));
-                        Matcher fontMatcher = FONT_PATTERN.matcher(raw.substring(foIdx, lastSkuIdx));
-                        if (foMatcher.find()) {
-                            int x = Integer.parseInt(foMatcher.group(1));
-                            int y = Integer.parseInt(foMatcher.group(2));
-                            int fontH = fontMatcher.find() ? Integer.parseInt(fontMatcher.group(1)) : 28;
-                            int newY = y + fontH + 4;
-                            // Pseudo-bold: imprimir el texto 2 veces con 1 dot de offset
-                            String field1 = "^FO" + x + "," + newY + "^A0N,25,25^FD" + zoneText + "^FS";
-                            String field2 = "^FO" + (x + 1) + "," + newY + "^A0N,25,25^FD" + zoneText + "^FS";
-                            raw = raw.substring(0, fsIdx + 3) + "\n" + field1 + "\n" + field2 + raw.substring(fsIdx + 3);
-                        }
+                    // Etiqueta con SKU: anclar al campo del SKU
+                    anchorFsIdx = raw.indexOf("^FS", lastSkuIdx);
+                    anchorFoIdx = raw.lastIndexOf("^FO", lastSkuIdx);
+                } else {
+                    // Etiqueta pack/carro sin SKU: anclar debajo de "Unidad"/"Unidades"
+                    int unidadIdx = raw.indexOf("Unidad");
+                    if (unidadIdx >= 0) {
+                        anchorFsIdx = raw.indexOf("^FS", unidadIdx);
+                        anchorFoIdx = raw.lastIndexOf("^FO", unidadIdx);
+                    }
+                }
+
+                if (anchorFoIdx >= 0 && anchorFsIdx >= 0) {
+                    String segment = raw.substring(anchorFoIdx, anchorFsIdx);
+                    Matcher foMatcher = FO_PATTERN.matcher(segment);
+                    Matcher fontMatcher = FONT_PATTERN.matcher(segment);
+                    Matcher fbMatcher = FB_PATTERN.matcher(segment);
+                    if (foMatcher.find()) {
+                        int x = Integer.parseInt(foMatcher.group(1));
+                        int y = Integer.parseInt(foMatcher.group(2));
+                        int fontH = fontMatcher.find() ? Integer.parseInt(fontMatcher.group(1)) : 28;
+                        int fbLines = fbMatcher.find() ? Integer.parseInt(fbMatcher.group(2)) : 1;
+                        int newY = y + (fontH * fbLines) + 4;
+                        int fontSize = 25;
+                        // Pseudo-bold: imprimir el texto 2 veces con 1 dot de offset
+                        String field1 = "^FO" + x + "," + newY + "^A0N," + fontSize + "," + fontSize + "^FD" + zoneText + "^FS";
+                        String field2 = "^FO" + (x + 1) + "," + newY + "^A0N," + fontSize + "," + fontSize + "^FD" + zoneText + "^FS";
+                        raw = raw.substring(0, anchorFsIdx + 3) + "\n" + field1 + "\n" + field2 + raw.substring(anchorFsIdx + 3);
                     }
                 }
                 // Resaltar número de unidad (video inverso) si > 1 y zona no es CARROS ni RETIROS
                 raw = highlightUnitIfNeeded(raw, zone);
-                newLabels.add(new ZplLabel(raw, label.sku(), label.productDescription(), label.details(), label.quantity()));
+                newLabels.add(new ZplLabel(raw, label.sku(), label.productDescription(), label.details(), label.quantity(), label.turbo(), label.orderIds()));
             }
-            newGroups.add(new SortedLabelGroup(zone, group.sku(), group.productDescription(), group.details(), newLabels));
+            newGroups.add(new SortedLabelGroup(zone, group.sku(), group.productDescription(), group.details(), group.orderIds(), newLabels));
         }
         return new SortResult(newGroups, result.statistics());
     }
@@ -1016,6 +1184,7 @@ public class MainController {
         ObservableList<LabelTableRow> rows = FXCollections.observableArrayList();
         for (SortedLabelGroup group : result.groups()) {
             rows.add(new LabelTableRow(
+                    group.orderIds(),
                     group.zone(),
                     group.sku(),
                     group.productDescription(),
@@ -1025,21 +1194,27 @@ public class MainController {
         labelTable.setItems(rows);
 
         LabelStatistics stats = result.statistics();
+        int totalProductos = result.groups().stream()
+                .mapToInt(g -> extractQuantityFromLabels(g.labels()))
+                .sum();
         StringJoiner sj = new StringJoiner("  \u2502  ");
-        sj.add("Total: " + stats.totalLabels());
+        sj.add("Etiquetas: " + stats.totalLabels());
+        sj.add("Productos: " + totalProductos);
+        sj.add("SKUs: " + stats.uniqueSkus());
+        if (stats.unmappedLabels() > 0) {
+            sj.add("\u26a0 Sin zona: " + stats.unmappedLabels());
+        }
         for (Map.Entry<String, Integer> entry : stats.countByZone().entrySet()) {
             if (entry.getValue() > 0) {
                 sj.add(entry.getKey() + ": " + entry.getValue());
             }
         }
-        sj.add("SKUs: " + stats.uniqueSkus());
-        if (stats.unmappedLabels() > 0) {
-            sj.add("\u26a0 Sin zona: " + stats.unmappedLabels());
-        }
 
         statsLabel.setText(sj.toString());
         statsBar.setVisible(true);
         statsBar.setManaged(true);
+        searchBar.setVisible(false);
+        searchBar.setManaged(false);
     }
 
     private javafx.stage.Window getWindow() {

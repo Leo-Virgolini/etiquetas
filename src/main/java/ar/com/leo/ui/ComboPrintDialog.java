@@ -8,9 +8,12 @@ import javafx.print.PageLayout;
 import javafx.print.PageOrientation;
 import javafx.print.Paper;
 import javafx.print.PrinterJob;
+import javafx.scene.Group;
+import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.*;
 import javafx.scene.transform.Scale;
@@ -19,27 +22,40 @@ import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.Window;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 
 public class ComboPrintDialog {
 
-    private static final String[] COMBO_COLORS = {
-            "#4CAF50", "#2196F3", "#FF9800", "#9C27B0", "#00BCD4", "#E91E63", "#795548", "#607D8B"
-    };
+    private static final String CELL_BORDER = "-fx-border-color: #999; -fx-border-width: 0 1 1 0;";
+    private static final String HEADER_STYLE = "-fx-font-weight: bold; -fx-font-size: 12px; -fx-padding: 6 8; "
+            + "-fx-background-color: #d0d0d0; -fx-border-color: #999; -fx-border-width: 0 1 1 0;";
+    private static final String COMBO_HEADER_STYLE = "-fx-font-weight: bold; -fx-font-size: 12px; -fx-padding: 6 8; "
+            + "-fx-background-color: #e8e8e8; -fx-border-color: #999; -fx-border-width: 0 1 1 0;";
+    private static final String CELL_STYLE = "-fx-font-size: 12px; -fx-padding: 4 8; " + CELL_BORDER;
+    private static final String FOOTER_STYLE = "-fx-font-size: 10px; -fx-text-fill: #666;";
+    private static final double COMBO_SPACING = 8;
+    private static final double FOOTER_HEIGHT = 20;
+    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss");
 
     private final Stage stage;
-    private final VBox printableContent;
+    private final List<ComboProduct> combos;
+    private final String titleText;
 
     public ComboPrintDialog(Window owner, List<ComboProduct> combos) {
+        this.combos = combos;
+        this.titleText = "Composición de Combos  -  " + LocalDateTime.now().format(DATE_FMT);
         stage = new Stage();
         stage.initModality(Modality.WINDOW_MODAL);
         stage.initOwner(owner);
         stage.setTitle("Composición de Combos");
         stage.getIcons().add(new Image(getClass().getResourceAsStream("/ar/com/leo/ui/icons8-etiqueta-100.png")));
 
-        printableContent = buildContent(combos);
+        VBox displayContent = buildContent(combos);
 
-        ScrollPane scrollPane = new ScrollPane(printableContent);
+        ScrollPane scrollPane = new ScrollPane(displayContent);
         scrollPane.setFitToWidth(true);
         scrollPane.setPadding(new Insets(10));
 
@@ -59,7 +75,7 @@ public class ComboPrintDialog {
         root.setCenter(scrollPane);
         root.setBottom(buttons);
 
-        Scene scene = new Scene(root, 700, 800);
+        Scene scene = new Scene(root, 950, 800);
         stage.setScene(scene);
     }
 
@@ -67,80 +83,162 @@ public class ComboPrintDialog {
         stage.show();
     }
 
-    private VBox buildContent(List<ComboProduct> combos) {
-        VBox content = new VBox(15);
-        content.setPadding(new Insets(20));
+    private Label makeLabel(String text, String style, boolean forPrint) {
+        Label label = new Label(text);
+        label.setStyle(style);
+        label.setMaxHeight(Double.MAX_VALUE);
+        if (forPrint) {
+            label.setWrapText(true);
+        } else {
+            label.setTextOverrun(OverrunStyle.CLIP);
+            label.setMinWidth(Region.USE_PREF_SIZE);
+        }
+        return label;
+    }
+
+    private GridPane buildComboGrid(ComboProduct combo) {
+        return buildComboGrid(combo, false);
+    }
+
+    /**
+     * Construye una grilla individual para un combo (para vista en pantalla).
+     */
+    private GridPane buildComboGrid(ComboProduct combo, boolean forPrint) {
+        GridPane grid = new GridPane();
+        grid.setStyle("-fx-border-color: #999; -fx-border-width: 1 0 0 1;");
+
+        ColumnConstraints col0 = new ColumnConstraints();
+        col0.setMinWidth(60);
+        col0.setHgrow(Priority.SOMETIMES);
+        ColumnConstraints col1 = new ColumnConstraints();
+        col1.setHgrow(Priority.ALWAYS);
+        ColumnConstraints col2 = new ColumnConstraints();
+        col2.setPrefWidth(45);
+        col2.setMinWidth(35);
+        grid.getColumnConstraints().addAll(col0, col1, col2);
+
+        Label comboLabel = makeLabel(combo.codigoCompuesto() + "  -  " + combo.productoCompuesto(), COMBO_HEADER_STYLE, false);
+        comboLabel.setMaxWidth(Double.MAX_VALUE);
+        grid.add(comboLabel, 0, 0, 3, 1);
+
+        grid.add(headerCell("Código"), 0, 1);
+        grid.add(headerCell("Producto"), 1, 1);
+        grid.add(headerCell("Cant."), 2, 1);
+
+        int row = 2;
+        for (ComboComponent comp : combo.componentes()) {
+            grid.add(makeLabel(comp.codigoComponente(), CELL_STYLE, false), 0, row);
+            grid.add(makeLabel(comp.productoComponente(), CELL_STYLE, false), 1, row);
+            grid.add(makeLabel(String.valueOf(comp.cantidad()), CELL_STYLE + "-fx-font-weight: bold; -fx-alignment: center;", false), 2, row);
+            row++;
+        }
+
+        return grid;
+    }
+
+    /**
+     * Construye un bloque para impresión: header en negrita + líneas simples por componente.
+     */
+    private VBox buildComboPrintBlock(ComboProduct combo) {
+        VBox block = new VBox(2);
+        block.setStyle("-fx-border-color: #999; -fx-border-width: 0 0 1 0; -fx-padding: 4 0 6 0;");
+
+        Label header = new Label(combo.codigoCompuesto() + "  -  " + combo.productoCompuesto());
+        header.setStyle("-fx-font-weight: bold; -fx-font-size: 12px; -fx-background-color: #e8e8e8; -fx-padding: 4 8;");
+        header.setMaxWidth(Double.MAX_VALUE);
+        header.setWrapText(true);
+        block.getChildren().add(header);
+
+        for (ComboComponent comp : combo.componentes()) {
+            Label line = new Label("    " + comp.codigoComponente() + "  -  " + comp.productoComponente() + "    x" + comp.cantidad());
+            line.setStyle("-fx-font-size: 11px; -fx-border-color: #ccc; -fx-border-width: 0 0 1 0; -fx-padding: 2 0;");
+            line.setWrapText(true);
+            block.getChildren().add(line);
+        }
+
+        return block;
+    }
+
+    /**
+     * Construye el contenido con todos los combos en una sola columna (para vista en pantalla).
+     */
+    private VBox buildContent(List<ComboProduct> comboList) {
+        VBox content = new VBox(10);
+        content.setPadding(new Insets(15));
         content.setStyle("-fx-background-color: white;");
 
-        Label title = new Label("Composición de Combos");
-        title.setStyle("-fx-font-size: 20px; -fx-font-weight: bold;");
+        Label title = new Label(titleText);
+        title.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-padding: 0 0 8 0;");
+        title.setMinWidth(Region.USE_PREF_SIZE);
         content.getChildren().add(title);
 
-        for (int i = 0; i < combos.size(); i++) {
-            ComboProduct combo = combos.get(i);
-            String color = COMBO_COLORS[i % COMBO_COLORS.length];
-            content.getChildren().add(buildComboSection(combo, color));
+        VBox column = new VBox(COMBO_SPACING);
+        for (ComboProduct combo : comboList) {
+            column.getChildren().add(buildComboGrid(combo));
         }
+        content.getChildren().add(column);
 
         return content;
     }
 
-    private VBox buildComboSection(ComboProduct combo, String color) {
-        VBox section = new VBox(5);
-        section.setPadding(new Insets(0, 0, 10, 0));
+    private Label headerCell(String text) {
+        Label label = makeLabel(text, HEADER_STYLE, false);
+        label.setMaxWidth(Double.MAX_VALUE);
+        return label;
+    }
 
-        // Encabezado del combo
-        Label header = new Label(combo.codigoCompuesto() + "  -  " + combo.productoCompuesto());
-        header.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: white; "
-                + "-fx-background-color: " + color + "; -fx-padding: 6 12; -fx-background-radius: 4;");
-        header.setMaxWidth(Double.MAX_VALUE);
-        section.getChildren().add(header);
+    /**
+     * Mide la altura de un nodo renderizándolo en una Scene temporal.
+     */
+    private double measureNodeHeight(Node node, double width) {
+        Group group = new Group(node);
+        new Scene(group);
+        if (node instanceof Region region) {
+            region.setPrefWidth(width);
+        }
+        node.applyCss();
+        if (node instanceof Region region) {
+            region.layout();
+            double h = region.prefHeight(width);
+            group.getChildren().remove(node);
+            return h;
+        }
+        group.getChildren().remove(node);
+        return 0;
+    }
 
-        // Tabla de componentes
-        GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(4);
-        grid.setPadding(new Insets(8, 12, 8, 12));
-        grid.setStyle("-fx-background-color: #fafafa; -fx-border-color: #e0e0e0; -fx-border-width: 0 1 1 1;");
+    /**
+     * Construye una página con combos y footer de numeración.
+     */
+    private VBox buildPage(List<ComboProduct> pageCombos, boolean firstPage, int pageNum, int totalPages, double width) {
+        VBox page = new VBox(COMBO_SPACING);
+        page.setPadding(new Insets(10, 15, 5, 15));
+        page.setStyle("-fx-background-color: white;");
+        page.setPrefWidth(width);
 
-        // Headers de la tabla
-        Label hCod = new Label("Código");
-        hCod.setStyle("-fx-font-weight: bold; -fx-font-size: 12px;");
-        Label hProd = new Label("Producto");
-        hProd.setStyle("-fx-font-weight: bold; -fx-font-size: 12px;");
-        Label hCant = new Label("Cant.");
-        hCant.setStyle("-fx-font-weight: bold; -fx-font-size: 12px;");
-
-        grid.add(hCod, 0, 0);
-        grid.add(hProd, 1, 0);
-        grid.add(hCant, 2, 0);
-
-        // Column constraints
-        ColumnConstraints col0 = new ColumnConstraints();
-        col0.setPrefWidth(120);
-        ColumnConstraints col1 = new ColumnConstraints();
-        col1.setHgrow(Priority.ALWAYS);
-        ColumnConstraints col2 = new ColumnConstraints();
-        col2.setPrefWidth(50);
-        grid.getColumnConstraints().addAll(col0, col1, col2);
-
-        int row = 1;
-        for (ComboComponent comp : combo.componentes()) {
-            Label codLabel = new Label(comp.codigoComponente());
-            codLabel.setStyle("-fx-font-size: 12px;");
-            Label prodLabel = new Label(comp.productoComponente());
-            prodLabel.setStyle("-fx-font-size: 12px;");
-            Label cantLabel = new Label(String.valueOf(comp.cantidad()));
-            cantLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold;");
-
-            grid.add(codLabel, 0, row);
-            grid.add(prodLabel, 1, row);
-            grid.add(cantLabel, 2, row);
-            row++;
+        if (firstPage) {
+            Label title = new Label(titleText);
+            title.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-padding: 0 0 6 0;");
+            page.getChildren().add(title);
         }
 
-        section.getChildren().add(grid);
-        return section;
+        for (ComboProduct combo : pageCombos) {
+            page.getChildren().add(buildComboPrintBlock(combo));
+        }
+
+        // Spacer para empujar el footer al fondo
+        Region spacer = new Region();
+        VBox.setVgrow(spacer, Priority.ALWAYS);
+        page.getChildren().add(spacer);
+
+        // Footer con número de página
+        Label footer = new Label("Página " + pageNum + " de " + totalPages);
+        footer.setStyle(FOOTER_STYLE);
+        footer.setMaxWidth(Double.MAX_VALUE);
+        footer.setAlignment(Pos.CENTER);
+        page.getChildren().add(footer);
+
+        return page;
     }
 
     private void print() {
@@ -158,68 +256,95 @@ public class ComboPrintDialog {
 
         PageLayout pageLayout = job.getPrinter().createPageLayout(
                 Paper.A4, PageOrientation.PORTRAIT,
-                javafx.print.Printer.MarginType.DEFAULT);
+                javafx.print.Printer.MarginType.HARDWARE_MINIMUM);
         job.getJobSettings().setPageLayout(pageLayout);
 
         double printableWidth = pageLayout.getPrintableWidth();
         double printableHeight = pageLayout.getPrintableHeight();
-        double contentWidth = printableContent.prefWidth(-1);
-        double contentHeight = printableContent.prefHeight(printableWidth);
 
-        // Escalar para que quepa en el ancho de la página
-        double scale = Math.min(1.0, printableWidth / contentWidth);
+        // Medir altura del título
+        Label titleMeasure = new Label(titleText);
+        titleMeasure.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-padding: 0 0 6 0;");
+        double titleHeight = measureNodeHeight(titleMeasure, printableWidth) + COMBO_SPACING;
 
-        // Aplicar layout antes de imprimir
-        printableContent.applyCss();
-        printableContent.layout();
-        printableContent.setPrefWidth(printableWidth / scale);
-
-        // Re-layout con el nuevo ancho
-        printableContent.applyCss();
-        printableContent.layout();
-
-        contentHeight = printableContent.prefHeight(printableWidth / scale);
-        double scaledHeight = contentHeight * scale;
-
-        // Si cabe en una página, imprimir directo
-        if (scaledHeight <= printableHeight) {
-            Scale scaleTransform = new Scale(scale, scale);
-            printableContent.getTransforms().add(scaleTransform);
-            boolean success = job.printPage(pageLayout, printableContent);
-            printableContent.getTransforms().remove(scaleTransform);
-            if (success) {
-                job.endJob();
-            }
-        } else {
-            // Multi-página: recortar por secciones
-            Scale scaleTransform = new Scale(scale, scale);
-            printableContent.getTransforms().add(scaleTransform);
-
-            double pageHeight = printableHeight / scale;
-            double totalHeight = contentHeight;
-            double yOffset = 0;
-
-            while (yOffset < totalHeight) {
-                printableContent.setTranslateY(-yOffset * scale);
-                // Clip para que solo se vea la porción de esta página
-                javafx.scene.shape.Rectangle clip = new javafx.scene.shape.Rectangle(
-                        0, yOffset * scale, printableWidth, printableHeight);
-                printableContent.setClip(clip);
-
-                boolean success = job.printPage(pageLayout, printableContent);
-                if (!success) break;
-                yOffset += pageHeight;
-            }
-
-            printableContent.setClip(null);
-            printableContent.setTranslateY(0);
-            printableContent.getTransforms().remove(scaleTransform);
-            job.endJob();
+        // Medir altura de cada combo individualmente (usando formato de impresión)
+        double contentWidth = printableWidth - 30; // 15+15 padding
+        List<Double> comboHeights = new ArrayList<>();
+        for (ComboProduct combo : combos) {
+            VBox block = buildComboPrintBlock(combo);
+            double h = measureNodeHeight(block, contentWidth);
+            comboHeights.add(h);
         }
 
-        // Restaurar tamaño original
-        printableContent.setPrefWidth(Region.USE_COMPUTED_SIZE);
-        printableContent.applyCss();
-        printableContent.layout();
+        // Espacio disponible por página (descontando padding y footer)
+        double pageTopBottomPadding = 15; // 10 top + 5 bottom
+        double availableFirst = printableHeight - pageTopBottomPadding - titleHeight - FOOTER_HEIGHT;
+        double availableOther = printableHeight - pageTopBottomPadding - FOOTER_HEIGHT;
+
+        // Distribuir combos en páginas
+        List<List<ComboProduct>> pages = new ArrayList<>();
+        List<ComboProduct> currentPage = new ArrayList<>();
+        double currentHeight = 0;
+        double available = availableFirst;
+
+        for (int i = 0; i < combos.size(); i++) {
+            double comboH = comboHeights.get(i) + COMBO_SPACING;
+
+            if (!currentPage.isEmpty() && currentHeight + comboH > available) {
+                // Página llena, iniciar nueva
+                pages.add(currentPage);
+                currentPage = new ArrayList<>();
+                currentHeight = 0;
+                available = availableOther;
+            }
+
+            currentPage.add(combos.get(i));
+            currentHeight += comboH;
+        }
+        if (!currentPage.isEmpty()) {
+            pages.add(currentPage);
+        }
+
+        int totalPages = pages.size();
+
+        // Imprimir cada página
+        boolean allOk = true;
+        for (int p = 0; p < totalPages; p++) {
+            VBox pageContent = buildPage(pages.get(p), p == 0, p + 1, totalPages, printableWidth);
+
+            Group root = new Group(pageContent);
+            new Scene(root);
+            pageContent.applyCss();
+            pageContent.layout();
+
+            // Verificar si el ancho real excede el imprimible y escalar si es necesario
+            double actualWidth = pageContent.prefWidth(-1);
+            double scaleX = actualWidth > printableWidth ? printableWidth / actualWidth : 1.0;
+
+            // Usar la altura de la página imprimible para que el footer quede abajo
+            pageContent.setPrefHeight(printableHeight / scaleX);
+            pageContent.layout();
+
+            Scale scaleTransform = null;
+            if (scaleX < 1.0) {
+                scaleTransform = new Scale(scaleX, scaleX);
+                pageContent.getTransforms().add(scaleTransform);
+            }
+
+            boolean printed = job.printPage(pageLayout, pageContent);
+
+            if (scaleTransform != null) {
+                pageContent.getTransforms().remove(scaleTransform);
+            }
+
+            if (!printed) {
+                allOk = false;
+                break;
+            }
+        }
+
+        if (allOk) {
+            job.endJob();
+        }
     }
 }

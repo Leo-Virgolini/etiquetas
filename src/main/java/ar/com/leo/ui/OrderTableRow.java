@@ -53,7 +53,9 @@ public class OrderTableRow {
     public int getProductCount() {
         int count = 0;
         for (OrdenML o : ordenes) {
-            count += o.getItems().size();
+            for (var v : o.getItems()) {
+                count += (int) v.getCantidad();
+            }
         }
         return count;
     }

@@ -12,17 +12,18 @@ public class LabelSorter {
     private int zoneGroupPriority(String zone) {
         String z = zone.toUpperCase();
         if (z.startsWith("J")) return 0;
+        if (z.startsWith("TURBOS")) return 4;
         if (z.startsWith("T")) return 1;
         if (z.startsWith("COMBOS")) return 2;
         if (z.startsWith("CARROS")) return 3;
-        if (z.startsWith("RETIROS")) return 4;
+        if (z.startsWith("RETIROS")) return 5;
         return Integer.MAX_VALUE;
     }
 
     public SortResult sort(List<ZplLabel> labels, Map<String, String> skuToZone) {
         Map<String, List<ZplLabel>> grouped = labels.stream()
                 .collect(Collectors.groupingBy(
-                        l -> resolveZone(l.sku(), skuToZone) + "|" + (l.sku() != null ? l.sku() : ""),
+                        l -> resolveZoneForLabel(l, skuToZone) + "|" + (l.sku() != null ? l.sku() : ""),
                         LinkedHashMap::new,
                         Collectors.toList()));
 
@@ -41,7 +42,12 @@ public class LabelSorter {
                             .filter(Objects::nonNull)
                             .findFirst()
                             .orElse("");
-                    return new SortedLabelGroup(zone, sku, desc, details, entry.getValue());
+                    String orderIds = entry.getValue().stream()
+                            .map(ZplLabel::orderIds)
+                            .filter(o -> o != null && !o.isEmpty())
+                            .findFirst()
+                            .orElse("");
+                    return new SortedLabelGroup(zone, sku, desc, details, orderIds, entry.getValue());
                 })
                 .sorted(Comparator
                         .<SortedLabelGroup>comparingInt(g -> zoneGroupPriority(g.zone()))
@@ -59,12 +65,25 @@ public class LabelSorter {
         return new SortResult(groups, stats);
     }
 
+    private String resolveZoneForLabel(ZplLabel label, Map<String, String> skuToZone) {
+        if (label.turbo()) return "TURBOS";
+        return resolveZone(label.sku(), skuToZone);
+    }
+
     private String resolveZone(String sku, Map<String, String> skuToZone) {
         if (sku == null || sku.isEmpty()) {
             return UNKNOWN;
         }
         if (sku.contains("\n")) {
-            return "CARROS";
+            // CARROS solo si hay 2+ SKUs distintos
+            long distinct = Arrays.stream(sku.split("\n"))
+                    .filter(s -> !s.isBlank())
+                    .distinct()
+                    .count();
+            if (distinct > 1) return "CARROS";
+            // Si todos son el mismo SKU, resolver como SKU individual
+            String singleSku = sku.split("\n")[0].trim();
+            return skuToZone.getOrDefault(singleSku, UNKNOWN);
         }
         return skuToZone.getOrDefault(sku, UNKNOWN);
     }
@@ -76,10 +95,13 @@ public class LabelSorter {
         int unmapped = 0;
 
         for (ZplLabel label : labels) {
-            String zone = resolveZone(label.sku(), skuToZone);
+            String zone = resolveZoneForLabel(label, skuToZone);
             countByZone.merge(zone, 1, Integer::sum);
             if (label.sku() != null) {
-                uniqueSkus.add(label.sku());
+                for (String s : label.sku().split("\n")) {
+                    String trimmed = s.trim();
+                    if (!trimmed.isEmpty()) uniqueSkus.add(trimmed);
+                }
             }
             if (zone.equals(UNKNOWN)) {
                 unmapped++;

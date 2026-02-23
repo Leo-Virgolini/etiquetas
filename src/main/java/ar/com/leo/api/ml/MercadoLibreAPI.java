@@ -42,7 +42,7 @@ public class MercadoLibreAPI {
     public record MLOrderResult(List<Venta> ventas, List<OrdenML> ordenes) {
     }
 
-    public record SlaInfo(String status, OffsetDateTime expectedDate) {
+    public record SlaInfo(String status, OffsetDateTime expectedDate, boolean turbo) {
     }
 
     public record ShipmentInfo(String substatus, OffsetDateTime slaDate) {
@@ -112,16 +112,11 @@ public class MercadoLibreAPI {
 
         // Siempre buscar pendientes
         searchAndCollect(userId, SUBSTATUS_PENDIENTES, "ready_to_print", orderIdsSeen, ventas, ordenes);
-        AppLogger.info("ML - Órdenes pendientes (ready_to_print): " + ordenes.size());
 
         // Si incluir impresas, hacer segunda búsqueda
         if (incluirImpresas) {
-            int pendientes = ordenes.size();
             searchAndCollect(userId, SUBSTATUS_IMPRESAS, "printed", orderIdsSeen, ventas, ordenes);
-            AppLogger.info("ML - Órdenes impresas/procesadas: " + (ordenes.size() - pendientes));
         }
-
-        AppLogger.info("ML - Total: " + ventas.size() + " ventas, " + ordenes.size() + " órdenes");
         return new MLOrderResult(ventas, ordenes);
     }
 
@@ -273,7 +268,6 @@ public class MercadoLibreAPI {
         List<OrdenML> ordenes = result.ordenes();
 
         if (ordenes.isEmpty()) {
-            AppLogger.info("ML - No hay órdenes para descargar etiquetas.");
             return List.of();
         }
 
@@ -298,14 +292,13 @@ public class MercadoLibreAPI {
             }
 
             if (!shipmentSkuMap.containsKey(shipId)) {
-                shipmentSkuMap.put(shipId, new SkuInfo(sku, desc, Math.max(totalQty, 1)));
+                shipmentSkuMap.put(shipId, new SkuInfo(sku, desc, Math.max(totalQty, 1), String.valueOf(orden.getOrderId())));
                 shipmentIds.add(shipId);
             }
         }
 
         // Filtrar por SLA si corresponde
         if (soloSlaHoy) {
-            AppLogger.info("ML - Consultando SLA de " + shipmentIds.size() + " envíos...");
             Map<Long, SlaInfo> slaMap = obtenerSlasParalelo(shipmentIds);
 
             OffsetDateTime hoyFin = java.time.LocalDate.now()
@@ -324,25 +317,19 @@ public class MercadoLibreAPI {
                 }
             }
 
-            AppLogger.info("ML - Envíos después de filtro SLA: " + filtrados.size() + " de " + shipmentIds.size());
             shipmentIds = filtrados;
         }
 
         if (shipmentIds.isEmpty()) {
-            AppLogger.info("ML - No hay envíos después del filtro SLA.");
             return List.of();
         }
-
-        AppLogger.info("ML - Descargando etiquetas ZPL para " + shipmentIds.size() + " envíos...");
 
         // Descargar en batches de 50
         List<ZplLabel> allLabels = new ArrayList<>();
         for (int i = 0; i < shipmentIds.size(); i += MAX_SHIPMENTS_PER_REQUEST) {
             List<Long> batch = shipmentIds.subList(i, Math.min(i + MAX_SHIPMENTS_PER_REQUEST, shipmentIds.size()));
-            List<ZplLabel> batchLabels = descargarBatchZpl(batch, shipmentSkuMap);
+            List<ZplLabel> batchLabels = descargarBatchZpl(batch, shipmentSkuMap, Set.of());
             allLabels.addAll(batchLabels);
-            AppLogger.info(String.format("ML - Descargadas %d/%d etiquetas ZPL",
-                    Math.min(i + MAX_SHIPMENTS_PER_REQUEST, shipmentIds.size()), shipmentIds.size()));
         }
 
         return allLabels;
@@ -351,29 +338,45 @@ public class MercadoLibreAPI {
     /**
      * Descarga etiquetas ZPL solo para las órdenes dadas (usadas en el paso 2 del flujo).
      */
-    public static List<ZplLabel> descargarEtiquetasZplParaOrdenes(List<OrdenML> ordenes) {
-        Map<Long, SkuInfo> shipmentSkuMap = new LinkedHashMap<>();
-        List<Long> shipmentIds = new ArrayList<>();
-
+    public static List<ZplLabel> descargarEtiquetasZplParaOrdenes(List<OrdenML> ordenes, Set<Long> turboShipmentIds) {
+        // Agrupar órdenes por shipmentId para detectar carros (múltiples items/órdenes por envío)
+        Map<Long, List<OrdenML>> ordenesPorShipment = new LinkedHashMap<>();
         for (OrdenML orden : ordenes) {
             Long shipId = orden.getShipmentId();
             if (shipId == null || shipId <= 0) continue;
+            ordenesPorShipment.computeIfAbsent(shipId, k -> new ArrayList<>()).add(orden);
+        }
 
-            String sku = "";
+        Map<Long, SkuInfo> shipmentSkuMap = new LinkedHashMap<>();
+        List<Long> shipmentIds = new ArrayList<>();
+
+        for (var entry : ordenesPorShipment.entrySet()) {
+            Long shipId = entry.getKey();
+            List<OrdenML> group = entry.getValue();
+
+            // Recolectar todos los SKUs y títulos de todas las órdenes del envío
+            StringJoiner skuJoiner = new StringJoiner("\n");
+            StringJoiner titleJoiner = new StringJoiner("\n");
             int totalQty = 0;
-            StringJoiner titleJoiner = new StringJoiner(", ");
-            for (Venta v : orden.getItems()) {
-                String s = v.getSku() != null ? v.getSku() : "";
-                if (sku.isEmpty() && !s.isEmpty()) sku = s;
-                titleJoiner.add(v.getTitulo() != null && !v.getTitulo().isEmpty() ? v.getTitulo() : s);
-                totalQty += (int) v.getCantidad();
-            }
-            String title = titleJoiner.toString();
 
-            if (!shipmentSkuMap.containsKey(shipId)) {
-                shipmentSkuMap.put(shipId, new SkuInfo(sku, title, Math.max(totalQty, 1)));
-                shipmentIds.add(shipId);
+            for (OrdenML o : group) {
+                for (Venta v : o.getItems()) {
+                    String s = v.getSku() != null ? v.getSku() : "";
+                    if (!s.isEmpty()) skuJoiner.add(s);
+                    titleJoiner.add(v.getTitulo() != null && !v.getTitulo().isEmpty() ? v.getTitulo() : s);
+                    totalQty += (int) v.getCantidad();
+                }
             }
+
+            String sku = skuJoiner.toString();
+            String title = titleJoiner.toString();
+            OrdenML first = group.getFirst();
+            String orderIdsStr = first.getPackId() != null
+                    ? String.valueOf(first.getPackId())
+                    : String.valueOf(first.getOrderId());
+
+            shipmentSkuMap.put(shipId, new SkuInfo(sku, title, Math.max(totalQty, 1), orderIdsStr));
+            shipmentIds.add(shipId);
         }
 
         if (shipmentIds.isEmpty()) {
@@ -386,7 +389,7 @@ public class MercadoLibreAPI {
         List<ZplLabel> allLabels = new ArrayList<>();
         for (int i = 0; i < shipmentIds.size(); i += MAX_SHIPMENTS_PER_REQUEST) {
             List<Long> batch = shipmentIds.subList(i, Math.min(i + MAX_SHIPMENTS_PER_REQUEST, shipmentIds.size()));
-            List<ZplLabel> batchLabels = descargarBatchZpl(batch, shipmentSkuMap);
+            List<ZplLabel> batchLabels = descargarBatchZpl(batch, shipmentSkuMap, turboShipmentIds);
             allLabels.addAll(batchLabels);
             AppLogger.info(String.format("ML - Descargadas %d/%d etiquetas ZPL",
                     Math.min(i + MAX_SHIPMENTS_PER_REQUEST, shipmentIds.size()), shipmentIds.size()));
@@ -398,7 +401,7 @@ public class MercadoLibreAPI {
     /**
      * Descarga un batch de etiquetas ZPL (máximo 50 shipment IDs).
      */
-    private static List<ZplLabel> descargarBatchZpl(List<Long> shipmentIds, Map<Long, SkuInfo> skuMap) {
+    private static List<ZplLabel> descargarBatchZpl(List<Long> shipmentIds, Map<Long, SkuInfo> skuMap, Set<Long> turboShipmentIds) {
         verificarTokens();
 
         StringJoiner sj = new StringJoiner(",");
@@ -449,6 +452,8 @@ public class MercadoLibreAPI {
             String desc = label.productDescription();
 
             int qty = 1;
+            boolean turbo = false;
+            String orderIds = "";
             if (idIterator.hasNext()) {
                 long shipId = idIterator.next();
                 SkuInfo info = skuMap.get(shipId);
@@ -460,10 +465,12 @@ public class MercadoLibreAPI {
                         desc = info.title;
                     }
                     qty = info.quantity;
+                    orderIds = info.orderIds;
                 }
+                turbo = turboShipmentIds.contains(shipId);
             }
 
-            enriched.add(new ZplLabel(label.rawZpl(), sku, desc, label.details(), qty));
+            enriched.add(new ZplLabel(label.rawZpl(), sku, desc, label.details(), qty, turbo, orderIds));
         }
 
         return enriched;
@@ -487,7 +494,7 @@ public class MercadoLibreAPI {
         return sb.toString();
     }
 
-    private record SkuInfo(String sku, String title, int quantity) {}
+    private record SkuInfo(String sku, String title, int quantity, String orderIds) {}
 
     // -----------------------------------------------------------------------------------------------------------------
     // VENTAS SELLER AGREEMENT (sin envío)
@@ -765,39 +772,62 @@ public class MercadoLibreAPI {
     public static SlaInfo obtenerSla(long shipmentId) {
         verificarTokens();
 
-        String url = "https://api.mercadolibre.com/shipments/" + shipmentId + "/sla";
-
-        Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
-                .uri(URI.create(url))
+        // 1) Obtener SLA
+        String slaUrl = "https://api.mercadolibre.com/shipments/" + shipmentId + "/sla";
+        Supplier<HttpRequest> slaReq = () -> HttpRequest.newBuilder()
+                .uri(URI.create(slaUrl))
                 .header("Authorization", "Bearer " + tokens.accessToken)
                 .GET()
                 .build();
 
-        HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
-
-        if (response == null || response.statusCode() != 200) {
-            AppLogger.warn("ML - Error al obtener SLA de shipment " + shipmentId + ": " +
-                    (response != null ? response.body() : "sin respuesta"));
-            return null;
-        }
-
-        try {
-            JsonNode root = mapper.readTree(response.body());
-            String status = root.path("status").asString("");
-            String expectedDateStr = root.path("expected_date").asString("");
-            OffsetDateTime expectedDate = null;
-            if (!expectedDateStr.isBlank()) {
-                try {
-                    expectedDate = OffsetDateTime.parse(expectedDateStr);
-                } catch (Exception e) {
-                    AppLogger.warn("ML - Error al parsear expected_date de SLA shipment " + shipmentId + ": " + expectedDateStr);
+        OffsetDateTime expectedDate = null;
+        String status = "";
+        HttpResponse<String> slaResponse = retryHandler.sendWithRetry(slaReq);
+        if (slaResponse != null && slaResponse.statusCode() == 200) {
+            try {
+                JsonNode root = mapper.readTree(slaResponse.body());
+                status = root.path("status").asString("");
+                String expectedDateStr = root.path("expected_date").asString("");
+                if (!expectedDateStr.isBlank()) {
+                    try {
+                        expectedDate = OffsetDateTime.parse(expectedDateStr);
+                    } catch (Exception e) {
+                        AppLogger.warn("ML - Error al parsear expected_date de SLA shipment " + shipmentId + ": " + expectedDateStr);
+                    }
                 }
+            } catch (Exception e) {
+                AppLogger.warn("ML - Error al leer SLA de shipment " + shipmentId + ": " + e.getMessage());
             }
-            return new SlaInfo(status, expectedDate);
-        } catch (Exception e) {
-            AppLogger.warn("ML - Error al leer SLA de shipment " + shipmentId + ": " + e.getMessage());
-            return null;
         }
+
+        // 2) Obtener tags del shipment para detectar turbo
+        boolean turbo = false;
+        String shipUrl = "https://api.mercadolibre.com/shipments/" + shipmentId;
+        Supplier<HttpRequest> shipReq = () -> HttpRequest.newBuilder()
+                .uri(URI.create(shipUrl))
+                .header("Authorization", "Bearer " + tokens.accessToken)
+                .GET()
+                .build();
+
+        HttpResponse<String> shipResponse = retryHandler.sendWithRetry(shipReq);
+        if (shipResponse != null && shipResponse.statusCode() == 200) {
+            try {
+                JsonNode root = mapper.readTree(shipResponse.body());
+                JsonNode tags = root.path("tags");
+                if (tags.isArray()) {
+                    for (JsonNode tag : tags) {
+                        if ("turbo".equals(tag.asString())) {
+                            turbo = true;
+                            break;
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                AppLogger.warn("ML - Error al leer tags de shipment " + shipmentId + ": " + e.getMessage());
+            }
+        }
+
+        return new SlaInfo(status, expectedDate, turbo);
     }
 
     public static Map<Long, SlaInfo> obtenerSlasParalelo(List<Long> shipmentIds) {
