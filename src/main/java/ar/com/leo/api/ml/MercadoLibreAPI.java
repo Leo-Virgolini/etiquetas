@@ -54,6 +54,8 @@ public class MercadoLibreAPI {
     private static final Object TOKEN_LOCK = new Object();
     private static final ObjectMapper mapper = JsonMapper.shared();
     private static final HttpClient httpClient = HttpClient.newHttpClient();
+    // Rate limit de ML: 18000 req/hora → 300 req/min → 5 req/seg
+    // Al ser un programa que usa pocas requests se usa un valor más alto (25 req/seg)
     private static final HttpRetryHandler retryHandler = new HttpRetryHandler(httpClient, 30000L, 25, MercadoLibreAPI::verificarTokens);
     private static final ExecutorService executor = Executors.newFixedThreadPool(25);
     private static final ZplParser zplParser = new ZplParser();

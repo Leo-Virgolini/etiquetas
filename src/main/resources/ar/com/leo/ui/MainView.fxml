@@ -69,7 +69,7 @@
                 <Label fx:id="statsLabel" styleClass="stats-label" text="" HBox.hgrow="ALWAYS"/>
             </HBox>
             <HBox fx:id="searchBar" alignment="CENTER_LEFT" managed="false" visible="false"
-                  style="-fx-padding: 0 15 8 15;">
+                  style="-fx-padding: 8 15 8 15;">
                 <TextField fx:id="searchField" promptText="&#x1F50D; Buscar por nro. de orden..." prefWidth="280"/>
             </HBox>
 
@@ -120,8 +120,7 @@
                 <Button fx:id="downloadLabelsBtn" text="&#x1F4E5; Paso 2: Descargar Etiquetas" onAction="#onDownloadSelectedLabels"
                         styleClass="action-button" disable="true"/>
                 <Button fx:id="comboSheetBtn" text="&#x1F4CB; Combos" onAction="#onShowComboSheet" styleClass="action-button" disable="true"/>
-                <Button fx:id="saveFileBtn" text="&#x1F4BE; Guardar Archivo" onAction="#onSaveFile" styleClass="action-button" disable="true"/>
-                <Button fx:id="printDirectBtn" text="&#x1F5A8; Imprimir Directo" onAction="#onPrintDirect" styleClass="action-button" disable="true"/>
+<Button fx:id="printDirectBtn" text="&#x1F5A8; Imprimir Directo" onAction="#onPrintDirect" styleClass="action-button" disable="true"/>
             </HBox>
         </VBox>
     </center>

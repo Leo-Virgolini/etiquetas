@@ -35,7 +35,9 @@ import javafx.stage.FileChooser;
 
 import javax.print.PrintService;
 import java.io.File;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -90,8 +92,6 @@ public class MainController {
     @FXML
     private Button downloadLabelsBtn;
     @FXML
-    private Button saveFileBtn;
-    @FXML
     private Button comboSheetBtn;
     @FXML
     private Button printDirectBtn;
@@ -128,7 +128,6 @@ public class MainController {
     private static final String PREF_EXCEL_PATH = "excelFilePath";
     private static final String PREF_COMBO_EXCEL_PATH = "comboExcelFilePath";
     private static final String PREF_ZPL_DIR = "zplLastDir";
-    private static final String PREF_SAVE_DIR = "saveLastDir";
 
     private boolean meliInitialized = false;
     private SortResult currentResult;
@@ -582,11 +581,28 @@ public class MainController {
                 SortResult result = injectZplHeaders(
                         labelSorter.sort(labels, excelMapping.skuToZone()), excelMapping);
 
+                // Guardar automáticamente en carpeta "Etiquetas"
+                String saveError = null;
+                try {
+                    Path etiquetasDir = Path.of("Etiquetas");
+                    Files.createDirectories(etiquetasDir);
+                    String fechaHora = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"));
+                    Path outputFile = etiquetasDir.resolve("etiquetas_ordenadas_" + fechaHora + ".txt");
+                    fileSaver.save(result.sortedFlatList(), outputFile);
+                } catch (Exception ex) {
+                    AppLogger.error("Error al guardar automáticamente", ex);
+                    saveError = ex.getMessage();
+                }
+
+                final String finalSaveError = saveError;
                 Platform.runLater(() -> {
                     setLoading(false);
                     currentResult = result;
                     showLabelTable();
                     displayResult(result);
+                    if (finalSaveError != null) {
+                        AlertHelper.showError("Error al guardar", "No se pudo guardar el archivo automáticamente:\n" + finalSaveError);
+                    }
                 });
             } catch (Exception e) {
                 Platform.runLater(() -> {
@@ -597,37 +613,6 @@ public class MainController {
         }).start();
     }
 
-    @FXML
-    private void onSaveFile() {
-        if (currentResult == null || currentResult.groups().isEmpty()) {
-            AlertHelper.showError("Error", "No hay etiquetas para guardar.");
-            return;
-        }
-
-        FileChooser fc = new FileChooser();
-        fc.setTitle("Guardar etiquetas ordenadas");
-        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Archivo ZPL", "*.txt"));
-        String fechaHora = java.time.LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"));
-        fc.setInitialFileName("etiquetas_ordenadas_" + fechaHora + ".txt");
-        String lastSaveDir = prefs.get(PREF_SAVE_DIR, "");
-        if (!lastSaveDir.isBlank()) {
-            File dir = new File(lastSaveDir);
-            if (dir.isDirectory()) {
-                fc.setInitialDirectory(dir);
-            }
-        }
-        File file = fc.showSaveDialog(getWindow());
-
-        if (file != null) {
-            prefs.put(PREF_SAVE_DIR, file.getParent());
-            try {
-                fileSaver.save(currentResult.sortedFlatList(), file.toPath());
-                AlertHelper.showInfo("\ud83d\udcbe Guardado", "Archivo guardado en: " + file.getAbsolutePath());
-            } catch (Exception e) {
-                AlertHelper.showError("Error al guardar", e.getMessage(), e);
-            }
-        }
-    }
 
     @FXML
     private void onPrintDirect() {
@@ -844,7 +829,6 @@ public class MainController {
         statsBar.setDisable(loading);
         searchBar.setDisable(loading);
         downloadLabelsBtn.setDisable(loading);
-        saveFileBtn.setDisable(loading);
         comboSheetBtn.setDisable(loading);
         printDirectBtn.setDisable(loading);
         backToOrdersBtn.setDisable(loading);
@@ -862,7 +846,6 @@ public class MainController {
         searchField.clear();
         boolean hayOrdenes = !orderTable.getItems().isEmpty();
         downloadLabelsBtn.setDisable(!hayOrdenes);
-        saveFileBtn.setDisable(true);
         comboSheetBtn.setDisable(true);
         printDirectBtn.setDisable(true);
         backToOrdersBtn.setVisible(false);
@@ -876,7 +859,6 @@ public class MainController {
         orderTable.setManaged(false);
         downloadLabelsBtn.setDisable(true);
         boolean hayEtiquetas = currentResult != null && !currentResult.groups().isEmpty();
-        saveFileBtn.setDisable(!hayEtiquetas);
         comboSheetBtn.setDisable(!hayEtiquetas);
         printDirectBtn.setDisable(!hayEtiquetas);
         // Mostrar botón volver solo si hay órdenes cargadas
