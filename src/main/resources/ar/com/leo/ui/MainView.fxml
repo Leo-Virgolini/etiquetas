@@ -29,7 +29,7 @@
                 </HBox>
             </VBox>
 
-            <TabPane fx:id="tabPane" VBox.vgrow="ALWAYS">
+            <TabPane fx:id="tabPane" VBox.vgrow="ALWAYS" tabMinWidth="120" tabMaxWidth="300">
 
                 <!-- ══ Tab Pickit ══ -->
                 <Tab text="&#x1F4E6; Pickit" closable="false" styleClass="tab, tab-pickit">
@@ -37,21 +37,23 @@
                         <!-- Radio SLA -->
                         <HBox spacing="15" alignment="CENTER_LEFT">
                             <Label text="Despacho:" style="-fx-font-weight: bold;"/>
-                            <RadioButton fx:id="radioPickitSlaHoy" text="Hasta hoy" selected="true"/>
-                            <RadioButton fx:id="radioPickitSlaTodos" text="Sin l&#xED;mite"/>
+                            <RadioButton fx:id="radioPickitSlaHoy" text="&#x1F4C5; Hasta hoy" selected="true"/>
+                            <RadioButton fx:id="radioPickitSlaTodos" text="&#x1F4C6; Sin l&#xED;mite"/>
                         </HBox>
+                        <!-- Separador -->
+                        <Separator/>
                         <!-- Productos Manuales -->
                         <VBox spacing="5">
                             <Label text="&#x1F4CB; Productos manuales:" style="-fx-font-weight: bold;"/>
                             <HBox spacing="8" alignment="CENTER_LEFT">
                                 <TextField fx:id="pickitSkuField" promptText="SKU" prefWidth="120"/>
                                 <TextField fx:id="pickitCantidadField" promptText="Cant" prefWidth="80"/>
-                                <Button fx:id="pickitBtnAgregarModificar" text="Agregar" onAction="#onPickitAgregarProducto"/>
-                                <Button text="Eliminar" onAction="#onPickitEliminarProducto"/>
-                                <Button text="Limpiar" onAction="#onPickitLimpiarProductos"/>
+                                <Button fx:id="pickitBtnAgregarModificar" text="&#x2795; Agregar" onAction="#onPickitAgregarProducto"/>
+                                <Button text="&#x274C; Eliminar" onAction="#onPickitEliminarProducto"/>
+                                <Button text="&#x1F5D1; Limpiar" onAction="#onPickitLimpiarProductos"/>
                                 <Button text="&#x1F4C2; Importar Excel" onAction="#onPickitImportarExcel"/>
                             </HBox>
-                            <TableView fx:id="pickitManualTable" prefHeight="280" maxHeight="350">
+                            <TableView fx:id="pickitManualTable" prefHeight="280" maxHeight="350" styleClass="pickit-compact-table">
                                 <columns>
                                     <TableColumn fx:id="pickitColSku" text="SKU" prefWidth="150"/>
                                     <TableColumn fx:id="pickitColCantidad" text="Cantidad" prefWidth="100"/>
@@ -142,9 +144,6 @@
 
                             <!-- Tabla de etiquetas -->
                             <TableView fx:id="labelTable">
-                                <placeholder>
-                                    <Label text="&#x1F4E6; Cargue etiquetas ZPL para ver el resultado ordenado" style="-fx-font-size: 14px; -fx-text-fill: #888;"/>
-                                </placeholder>
                                 <columns>
                                     <TableColumn fx:id="labelOrderCol" text="Orden" prefWidth="120" minWidth="80"/>
                                     <TableColumn fx:id="zoneCol" text="Zona" prefWidth="100" minWidth="60"/>

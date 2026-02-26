@@ -57,6 +57,10 @@ public class MercadoLibreAPI {
     // Rate limit de ML: 18000 req/hora → 300 req/min → 5 req/seg
     // Al ser un programa que usa pocas requests se usa un valor más alto (25 req/seg)
     private static final HttpRetryHandler retryHandler = new HttpRetryHandler(httpClient, 30000L, 25, MercadoLibreAPI::verificarTokens);
+
+    public static HttpRetryHandler getRetryHandler() {
+        return retryHandler;
+    }
     private static final ExecutorService executor = Executors.newFixedThreadPool(25);
     private static final ZplParser zplParser = new ZplParser();
     private static MLCredentials mlCredentials;

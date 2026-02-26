@@ -12,7 +12,6 @@ import tools.jackson.databind.json.JsonMapper;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
@@ -27,8 +26,7 @@ public class PickitMercadoLibreAPI {
     public record SlaInfo(String status, OffsetDateTime expectedDate) {}
 
     private static final ObjectMapper mapper = JsonMapper.shared();
-    private static final HttpClient httpClient = HttpClient.newHttpClient();
-    private static final HttpRetryHandler retryHandler = new HttpRetryHandler(httpClient, 30000L, 5, MercadoLibreAPI::verificarTokens);
+    private static final HttpRetryHandler retryHandler = MercadoLibreAPI.getRetryHandler();
 
     public static boolean inicializar() {
         return MercadoLibreAPI.inicializar();

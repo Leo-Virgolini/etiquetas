@@ -20,7 +20,7 @@ public class EtiquetasApp extends Application {
 
         primaryStage.setTitle("Pickit y Etiquetas");
         primaryStage.setScene(scene);
-        primaryStage.getIcons().add(new Image(getClass().getResourceAsStream("/ar/com/leo/ui/icons8-etiqueta-100.png")));
+        primaryStage.getIcons().add(new Image(getClass().getResourceAsStream("/ar/com/leo/ui/icons8-productos-64.png")));
         primaryStage.setMinWidth(800);
         primaryStage.setMinHeight(600);
         primaryStage.show();

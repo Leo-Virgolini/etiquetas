@@ -83,12 +83,34 @@
     -fx-background-color: #FFFBE6;
 }
 
+/* ── Tabla compacta Pickit ── */
+.pickit-compact-table .table-cell {
+    -fx-padding: 1 4 1 4;
+    -fx-font-size: 12px;
+    -fx-alignment: CENTER;
+}
+
+/* ── Tabs principales más grandes ── */
+.tab-etiquetas > .tab-container,
+.tab-pickit > .tab-container {
+    -fx-padding: 8 0 8 0;
+    -fx-alignment: CENTER;
+}
+.tab-etiquetas > .tab-container > .tab-label,
+.tab-pickit > .tab-container > .tab-label {
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+}
+
 /* ── Tab Etiquetas (naranja) ── */
 .tab-etiquetas > .tab-container {
     -fx-background-color: #FFF3E0;
 }
 .tab-etiquetas:selected > .tab-container {
     -fx-background-color: #FFB74D;
+}
+.tab-etiquetas .tab-label {
+    -fx-text-fill: #E65100;
 }
 
 /* ── Tab Pickit (azul) ── */
@@ -97,6 +119,9 @@
 }
 .tab-pickit:selected > .tab-container {
     -fx-background-color: #90CAF9;
+}
+.tab-pickit .tab-label {
+    -fx-text-fill: #1565C0;
 }
 .tab-pickit-content {
     -fx-background-color: #E8F0FE;

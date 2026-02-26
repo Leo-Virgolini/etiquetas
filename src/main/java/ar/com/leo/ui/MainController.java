@@ -322,6 +322,18 @@ public class MainController {
         lockColumns(orderTable);
         lockColumns(labelTable);
 
+        // Placeholder dinámico según sub-tab seleccionado
+        Label placeholderLocal = new Label("\uD83D\uDCE6 Cargue etiquetas ZPL para ver el resultado ordenado");
+        placeholderLocal.setStyle("-fx-font-size: 14px; -fx-text-fill: #888;");
+        Label placeholderApi = new Label("\uD83D\uDCCB Haga clic en 'Obtener Órdenes' para cargar las órdenes de ML");
+        placeholderApi.setStyle("-fx-font-size: 14px; -fx-text-fill: #888;");
+        etiquetasSubTabPane.getSelectionModel().selectedIndexProperty().addListener((obs, oldIdx, newIdx) -> {
+            if (labelTable.getItems() == null || labelTable.getItems().isEmpty()) {
+                labelTable.setPlaceholder(newIdx.intValue() == 0 ? placeholderApi : placeholderLocal);
+            }
+        });
+        labelTable.setPlaceholder(placeholderApi);
+
         // Copiar al portapapeles con Ctrl+C (fila) y click derecho (celda)
         setupTableCopyHandler(orderTable);
         setupTableCopyHandler(labelTable);
@@ -1457,6 +1469,9 @@ public class MainController {
             }
         });
         pickitManualTable.setItems(pickitProductosList);
+        pickitManualTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        pickitManualTable.setFixedCellSize(-1);
+        centerColumnHeaders(pickitManualTable);
         lockColumns(pickitManualTable);
 
         // Listener para editar producto al seleccionar fila
@@ -1466,10 +1481,10 @@ public class MainController {
                 pickitSkuField.setText(newVal.getSku());
                 double cant = newVal.getCantidad();
                 pickitCantidadField.setText(cant == Math.floor(cant) ? String.valueOf((int) cant) : String.valueOf(cant));
-                pickitBtnAgregarModificar.setText("Modificar");
+                pickitBtnAgregarModificar.setText("\u270F Modificar");
             } else {
                 pickitProductoEnEdicion = null;
-                pickitBtnAgregarModificar.setText("Agregar");
+                pickitBtnAgregarModificar.setText("\u2795 Agregar");
             }
         });
 
@@ -1570,7 +1585,7 @@ public class MainController {
         }
 
         pickitManualTable.getSelectionModel().clearSelection();
-        pickitBtnAgregarModificar.setText("Agregar");
+        pickitBtnAgregarModificar.setText("\u2795 Agregar");
         pickitSkuField.clear();
         pickitCantidadField.clear();
         pickitSkuField.requestFocus();
@@ -1585,7 +1600,7 @@ public class MainController {
                 pickitProductoEnEdicion = null;
             }
             pickitManualTable.getSelectionModel().clearSelection();
-            pickitBtnAgregarModificar.setText("Agregar");
+            pickitBtnAgregarModificar.setText("\u2795 Agregar");
             pickitSkuField.clear();
             pickitCantidadField.clear();
         }
@@ -1596,7 +1611,7 @@ public class MainController {
         pickitProductosList.clear();
         pickitProductoEnEdicion = null;
         pickitManualTable.getSelectionModel().clearSelection();
-        pickitBtnAgregarModificar.setText("Agregar");
+        pickitBtnAgregarModificar.setText("\u2795 Agregar");
         pickitSkuField.clear();
         pickitCantidadField.clear();
     }
