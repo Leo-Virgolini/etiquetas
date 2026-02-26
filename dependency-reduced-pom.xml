@@ -3,7 +3,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>ar.com.leo</groupId>
   <artifactId>etiquetas</artifactId>
-  <name>Ordenador de Etiquetas ZPL</name>
+  <name>Pickit y Etiquetas</name>
   <version>1.0-SNAPSHOT</version>
   <build>
     <plugins>
@@ -37,6 +37,7 @@
               <goal>shade</goal>
             </goals>
             <configuration>
+              <finalName>Pickit y Etiquetas</finalName>
               <transformers>
                 <transformer>
                   <mainClass>ar.com.leo.Launcher</mainClass>

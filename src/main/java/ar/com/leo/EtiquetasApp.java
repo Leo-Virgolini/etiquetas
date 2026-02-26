@@ -1,6 +1,7 @@
 package ar.com.leo;
 
 import ar.com.leo.api.ml.MercadoLibreAPI;
+import ar.com.leo.pickit.service.PickitGenerator;
 import atlantafx.base.theme.PrimerLight;
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
@@ -17,7 +18,7 @@ public class EtiquetasApp extends Application {
         FXMLLoader loader = new FXMLLoader(getClass().getResource("/ar/com/leo/ui/MainView.fxml"));
         Scene scene = new Scene(loader.load());
 
-        primaryStage.setTitle("Ordenador de Etiquetas ZPL");
+        primaryStage.setTitle("Pickit y Etiquetas");
         primaryStage.setScene(scene);
         primaryStage.getIcons().add(new Image(getClass().getResourceAsStream("/ar/com/leo/ui/icons8-etiqueta-100.png")));
         primaryStage.setMinWidth(800);
@@ -28,6 +29,7 @@ public class EtiquetasApp extends Application {
     @Override
     public void stop() {
         MercadoLibreAPI.shutdownExecutors();
+        PickitGenerator.shutdownExecutors();
     }
 
     public static void main(String[] args) {

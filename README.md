@@ -1,15 +1,21 @@
-# Ordenador de Etiquetas ZPL
+# Pickit y Etiquetas
 
-Aplicación de escritorio JavaFX para gestionar, ordenar e imprimir etiquetas de envío en formato ZPL (Zebra Programming Language), con integración a la API de MercadoLibre.
+Aplicación de escritorio JavaFX para gestionar despachos de e-commerce: generación de listas de picking (pickit), armado de carros, y ordenamiento e impresión de etiquetas ZPL. Integra MercadoLibre, Tienda Nube y DUX.
 
 ## Funcionalidades
 
+### Pickit
+- **Generación de pickit:** Obtiene ventas de MercadoLibre y Tienda Nube, cruza con stock y combos, y genera un Excel con la lista de picking ordenada por sector.
+- **Carros:** Genera automáticamente hojas de carros para órdenes con 3+ SKUs distintos.
+- **SLA:** Filtra ventas por fecha de despacho (hasta hoy o sin límite).
+- **Productos manuales:** Permite agregar productos manualmente o importarlos desde Excel.
+
+### Etiquetas
 - **Archivo local:** Cargar archivos `.txt` con etiquetas ZPL, parsearlas y ordenarlas por zona.
 - **API MercadoLibre:** Obtener órdenes pendientes de envío (ME2), descargar etiquetas ZPL e inyectar información de zona y código externo.
 - **Ordenamiento por zona:** Asigna zonas (J1, J2, T1, T2, CARROS, RETIROS, etc.) a cada etiqueta según un mapeo SKU-Zona definido en un archivo Excel.
 - **Composición de combos:** Lee un Excel con productos compuestos y muestra/imprime su desglose.
 - **Impresión directa:** Envía las etiquetas ZPL ordenadas directamente a una impresora Zebra.
-- **Guardado de archivo:** Exporta las etiquetas ordenadas a un archivo `.txt`.
 
 ## Requisitos
 
@@ -25,17 +31,32 @@ mvn clean compile
 mvn javafx:run
 ```
 
+## Generar JAR
+
+```bash
+mvn clean package
+# Genera: target/Pickit y Etiquetas.jar
+```
+
 ## Estructura del proyecto
 
 ```
 src/main/java/ar/com/leo/
-├── api/ml/          # Integración con API de MercadoLibre
-├── model/           # Records: ZplLabel, ExcelMapping, ComboProduct, etc.
-├── parser/          # Parseo de archivos ZPL y Excel
-├── printer/         # Descubrimiento de impresoras y envío ZPL
-├── sorter/          # Ordenamiento de etiquetas por zona
-├── ui/              # Controladores JavaFX y diálogos
-├── util/            # Utilidades (decodificación hex ZPL)
+├── api/
+│   ├── ml/              # Integración con API de MercadoLibre
+│   ├── nube/            # Integración con Tienda Nube
+│   └── dux/             # Integración con DUX (stock)
+├── pickit/
+│   ├── api/             # API ML específica del pickit
+│   ├── excel/           # Lectura de stock/combos y escritura del Excel pickit
+│   ├── model/           # Modelos: PickitItem, CarrosOrden, Venta, etc.
+│   └── service/         # PickitGenerator y PickitService
+├── model/               # Records: ZplLabel, ExcelMapping, ComboProduct, etc.
+├── parser/              # Parseo de archivos ZPL y Excel
+├── printer/             # Descubrimiento de impresoras y envío ZPL
+├── sorter/              # Ordenamiento de etiquetas por zona
+├── ui/                  # Controladores JavaFX y diálogos
+├── util/                # Utilidades
 ├── AppLogger.java
 └── EtiquetasApp.java
 ```
@@ -43,7 +64,6 @@ src/main/java/ar/com/leo/
 ## Tecnologías
 
 - **JavaFX 25** + AtlantaFX (tema PrimerLight)
-- **Apache POI** - Lectura de archivos Excel
-- **Jackson** - Procesamiento JSON (API ML)
-- **Guava** - RateLimiter para llamadas a la API
-- **Log4j 2** - Logging
+- **Apache POI** - Lectura y escritura de archivos Excel
+- **Jackson 3** - Procesamiento JSON (APIs)
+- **Guava** - RateLimiter para llamadas a las APIs

@@ -62,6 +62,11 @@ public class MercadoLibreAPI {
     private static MLCredentials mlCredentials;
     private static volatile TokensML tokens;
 
+    public static String getAccessToken() {
+        verificarTokens();
+        return tokens != null ? tokens.accessToken : null;
+    }
+
     public static void shutdownExecutors() {
         executor.shutdown();
         try {

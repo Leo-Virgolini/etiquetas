@@ -82,3 +82,22 @@
 .tab-api-content {
     -fx-background-color: #FFFBE6;
 }
+
+/* ── Tab Etiquetas (naranja) ── */
+.tab-etiquetas > .tab-container {
+    -fx-background-color: #FFF3E0;
+}
+.tab-etiquetas:selected > .tab-container {
+    -fx-background-color: #FFB74D;
+}
+
+/* ── Tab Pickit (azul) ── */
+.tab-pickit > .tab-container {
+    -fx-background-color: #E3F2FD;
+}
+.tab-pickit:selected > .tab-container {
+    -fx-background-color: #90CAF9;
+}
+.tab-pickit-content {
+    -fx-background-color: #E8F0FE;
+}

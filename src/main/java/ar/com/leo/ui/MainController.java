@@ -10,6 +10,9 @@ import ar.com.leo.model.ComboProduct;
 import ar.com.leo.parser.ComboExcelReader;
 import ar.com.leo.parser.ExcelMappingReader;
 import ar.com.leo.parser.ZplParser;
+import ar.com.leo.pickit.excel.ExcelManager;
+import ar.com.leo.pickit.model.ProductoManual;
+import ar.com.leo.pickit.service.PickitService;
 import ar.com.leo.printer.PrinterDiscovery;
 import ar.com.leo.printer.ZplFileSaver;
 import ar.com.leo.printer.ZplPrinterService;
@@ -31,6 +34,11 @@ import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
+import javafx.scene.media.AudioClip;
+import javafx.scene.paint.Color;
+import javafx.scene.text.Font;
+import javafx.scene.text.Text;
+import javafx.scene.text.TextFlow;
 import javafx.stage.FileChooser;
 
 import javax.print.PrintService;
@@ -49,6 +57,8 @@ public class MainController {
 
     @FXML
     private TabPane tabPane;
+    @FXML
+    private TabPane etiquetasSubTabPane;
     @FXML
     private TextField zplFileField;
     @FXML
@@ -116,6 +126,32 @@ public class MainController {
     @FXML
     private TableColumn<OrderTableRow, String> orderSlaCol;
 
+    // ── Pickit Tab ──
+    @FXML
+    private RadioButton radioPickitSlaHoy;
+    @FXML
+    private RadioButton radioPickitSlaTodos;
+    @FXML
+    private TextField pickitSkuField;
+    @FXML
+    private TextField pickitCantidadField;
+    @FXML
+    private TableView<ProductoManual> pickitManualTable;
+    @FXML
+    private TableColumn<ProductoManual, String> pickitColSku;
+    @FXML
+    private TableColumn<ProductoManual, Double> pickitColCantidad;
+    @FXML
+    private Button pickitBtnAgregarModificar;
+    @FXML
+    private ScrollPane pickitLogScrollPane;
+    @FXML
+    private TextFlow pickitLogTextFlow;
+    @FXML
+    private ProgressIndicator pickitProgressIndicator;
+    @FXML
+    private Button pickitGenerateBtn;
+
     private final ZplParser zplParser = new ZplParser();
     private final ExcelMappingReader excelReader = new ExcelMappingReader();
     private final ComboExcelReader comboExcelReader = new ComboExcelReader();
@@ -134,6 +170,15 @@ public class MainController {
     private List<OrdenML> fetchedOrders;
     private Set<Long> turboShipmentIds = Set.of();
     private FilteredList<OrderTableRow> filteredOrders;
+    private FilteredList<LabelTableRow> filteredLabels;
+
+    // ── Pickit ──
+    private final Preferences pickitPrefs = Preferences.userRoot().node("pickit");
+    private File pickitImportDir;
+    private final ObservableList<ProductoManual> pickitProductosList = FXCollections.observableArrayList();
+    private ProductoManual pickitProductoEnEdicion = null;
+    private AudioClip errorSound;
+    private AudioClip successSound;
 
     @FXML
     public void initialize() {
@@ -167,7 +212,7 @@ public class MainController {
             }
         });
         zoneCol.setCellValueFactory(new PropertyValueFactory<>("zone"));
-        zoneCol.setCellFactory(col -> centeredCell());
+        zoneCol.setCellFactory(col -> zoneCellWithUnknownHighlight());
         skuCol.setCellValueFactory(new PropertyValueFactory<>("sku"));
         skuCol.setCellFactory(col -> centeredCell());
         descCol.setCellValueFactory(new PropertyValueFactory<>("productDescription"));
@@ -186,7 +231,11 @@ public class MainController {
         orderTable.getSelectionModel().setSelectionMode(javafx.scene.control.SelectionMode.MULTIPLE);
         orderTable.setEditable(true);
         orderSelectCol.setCellValueFactory(cd -> cd.getValue().selectedProperty());
-        orderSelectCol.setCellFactory(CheckBoxTableCell.forTableColumn(orderSelectCol));
+        orderSelectCol.setCellFactory(col -> {
+            CheckBoxTableCell<OrderTableRow, Boolean> cell = new CheckBoxTableCell<>(idx -> orderTable.getItems().get(idx).selectedProperty());
+            cell.setAlignment(Pos.CENTER);
+            return cell;
+        });
         CheckBox selectAllCheck = new CheckBox();
         selectAllCheck.setSelected(true);
         selectAllCheck.setOnAction(e -> {
@@ -260,7 +309,7 @@ public class MainController {
                 }
             }
         });
-        orderZoneCol.setCellFactory(col -> centeredCell());
+        orderZoneCol.setCellFactory(col -> zoneCellWithUnknownHighlight());
         orderSkuCol.setCellFactory(col -> centeredCell());
         orderQtyCol.setCellFactory(col -> centeredCell());
         orderSlaCol.setCellFactory(col -> centeredCell());
@@ -269,6 +318,10 @@ public class MainController {
         centerColumnHeaders(orderTable);
         centerColumnHeaders(labelTable);
 
+        // Bloquear reordenamiento de columnas
+        lockColumns(orderTable);
+        lockColumns(labelTable);
+
         // Copiar al portapapeles con Ctrl+C (fila) y click derecho (celda)
         setupTableCopyHandler(orderTable);
         setupTableCopyHandler(labelTable);
@@ -276,10 +329,20 @@ public class MainController {
         setupCellCopyMenu(labelTable);
 
         searchField.textProperty().addListener((obs, oldVal, newVal) -> {
+            String filter = newVal == null ? "" : newVal.trim().toLowerCase();
             if (filteredOrders != null) {
-                String filter = newVal == null ? "" : newVal.trim();
                 filteredOrders.setPredicate(row ->
-                        filter.isEmpty() || row.getOrderId().contains(filter));
+                        filter.isEmpty() || row.getOrderId().toLowerCase().contains(filter)
+                                || (row.getSku() != null && row.getSku().toLowerCase().contains(filter))
+                                || (row.getZone() != null && row.getZone().toLowerCase().contains(filter))
+                                || (row.getProductDescription() != null && row.getProductDescription().toLowerCase().contains(filter)));
+            }
+            if (filteredLabels != null) {
+                filteredLabels.setPredicate(row ->
+                        filter.isEmpty() || (row.getOrderIds() != null && row.getOrderIds().toLowerCase().contains(filter))
+                                || (row.getSku() != null && row.getSku().toLowerCase().contains(filter))
+                                || (row.getZone() != null && row.getZone().toLowerCase().contains(filter))
+                                || (row.getProductDescription() != null && row.getProductDescription().toLowerCase().contains(filter)));
             }
         });
 
@@ -315,6 +378,9 @@ public class MainController {
         } catch (Exception e) {
             meliStatusLabel.setText("\u26aa Estado: No conectado");
         }
+
+        // ── Pickit Tab init ──
+        initPickitTab();
     }
 
     @FXML
@@ -588,7 +654,7 @@ public class MainController {
                     Files.createDirectories(etiquetasDir);
                     String fechaHora = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"));
                     Path outputFile = etiquetasDir.resolve("etiquetas_ordenadas_" + fechaHora + ".txt");
-                    fileSaver.save(result.sortedFlatList(), outputFile);
+                    fileSaver.save(interleaveForPrint(result.sortedFlatList()), outputFile);
                 } catch (Exception ex) {
                     AppLogger.error("Error al guardar automáticamente", ex);
                     saveError = ex.getMessage();
@@ -701,7 +767,8 @@ public class MainController {
         if (selectedPrinter == null) return;
 
         try {
-            printerService.printViaPrintService(labelsToPrint, selectedPrinter);
+            List<ZplLabel> reordered = interleaveForPrint(labelsToPrint);
+            printerService.printViaPrintService(reordered, selectedPrinter);
             AlertHelper.showInfo("\ud83d\udda8 Impresi\u00f3n", labelsToPrint.size() + " etiquetas enviadas a " + selectedPrinter.getName());
             showComboSheetIfNeeded();
         } catch (Exception e) {
@@ -764,6 +831,33 @@ public class MainController {
                 setText(empty || item == null ? null : item);
             }
         };
+    }
+
+    private static <T> TableCell<T, String> zoneCellWithUnknownHighlight() {
+        return new TableCell<>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                setAlignment(Pos.CENTER);
+                if (empty || item == null) {
+                    setText(null);
+                    setStyle("");
+                } else {
+                    setText(item);
+                    if ("???".equals(item)) {
+                        setStyle("-fx-background-color: #FFCDD2; -fx-text-fill: #B71C1C; -fx-font-weight: bold;");
+                    } else {
+                        setStyle("");
+                    }
+                }
+            }
+        };
+    }
+
+    private <T> void lockColumns(TableView<T> table) {
+        for (TableColumn<T, ?> col : table.getColumns()) {
+            col.setReorderable(false);
+        }
     }
 
     private <T> void centerColumnHeaders(TableView<T> table) {
@@ -857,6 +951,7 @@ public class MainController {
         labelTable.setManaged(true);
         orderTable.setVisible(false);
         orderTable.setManaged(false);
+        searchField.clear();
         downloadLabelsBtn.setDisable(true);
         boolean hayEtiquetas = currentResult != null && !currentResult.groups().isEmpty();
         comboSheetBtn.setDisable(!hayEtiquetas);
@@ -1052,57 +1147,86 @@ public class MainController {
         Map<String, String> skuToZone = excelMapping.skuToZone();
         Map<String, String> skuToExtCode = excelMapping.skuToExternalCode();
         List<SortedLabelGroup> newGroups = new ArrayList<>();
+        int labelPosition = 1;
         for (SortedLabelGroup group : result.groups()) {
             String zone = group.zone();
             String sku = group.sku();
-            String zoneText;
-            if ("CARROS".equals(zone)) {
-                zoneText = "ZONA: CARROS";
-            } else {
+            String zoneText = "ZONA: " + zone;
+            String extCodeText = null;
+            if (!"CARROS".equals(zone)) {
                 String extCode = skuToExtCode.getOrDefault(sku, "");
-                zoneText = "ZONA: " + zone + " | COD.EXT.: " + (extCode.isEmpty() ? "-" : extCode);
+                extCodeText = "COD.EXT.: " + (extCode.isEmpty() ? "-" : extCode);
             }
             List<ZplLabel> newLabels = new ArrayList<>();
             for (ZplLabel label : group.labels()) {
                 String raw = label.rawZpl();
-                // Insertar ZONA y COD.EXT. debajo del último campo SKU (o del último campo de producto para packs)
-                int lastSkuIdx = raw.lastIndexOf("SKU:");
-                int anchorFoIdx = -1;
-                int anchorFsIdx = -1;
+                // Inyectar número de posición (#1, #2, ...) arriba a la izquierda en negrita
+                // Se inserta antes de ^LH (si existe) para que use coordenadas absolutas (top-left del label)
+                String posText = "#" + labelPosition;
+                int lhIdx = raw.indexOf("^LH");
+                int insertIdx = lhIdx >= 0 ? lhIdx : raw.indexOf("^XA") + 3;
+                // ^LH0,0 resetea el label home a (0,0) para que ^FO use coordenadas absolutas
+                String posField1 = "^FO15,15^A0N,35,35^FD" + posText + "^FS";
+                String posField2 = "^FO16,15^A0N,35,35^FD" + posText + "^FS";
+                String posField3 = "^FO15,16^A0N,35,35^FD" + posText + "^FS";
+                raw = raw.substring(0, insertIdx) + "^LH0,0\n" + posField1 + "\n" + posField2 + "\n" + posField3 + "\n" + raw.substring(insertIdx);
+                labelPosition++;
 
-                if (lastSkuIdx >= 0) {
-                    // Etiqueta con SKU: anclar al campo del SKU
-                    anchorFsIdx = raw.indexOf("^FS", lastSkuIdx);
-                    anchorFoIdx = raw.lastIndexOf("^FO", lastSkuIdx);
-                } else {
-                    // Etiqueta pack/carro sin SKU: anclar debajo de "Unidad"/"Unidades"
-                    int unidadIdx = raw.indexOf("Unidad");
-                    if (unidadIdx >= 0) {
-                        anchorFsIdx = raw.indexOf("^FS", unidadIdx);
-                        anchorFoIdx = raw.lastIndexOf("^FO", unidadIdx);
+                // 1. Inyectar ZONA siempre debajo de "Unidades"
+                int unidadIdx = raw.indexOf("Unidad");
+                if (unidadIdx >= 0) {
+                    int zoneAnchorFsIdx = raw.indexOf("^FS", unidadIdx);
+                    int zoneAnchorFoIdx = raw.lastIndexOf("^FO", unidadIdx);
+                    if (zoneAnchorFoIdx >= 0 && zoneAnchorFsIdx >= 0) {
+                        String segment = raw.substring(zoneAnchorFoIdx, zoneAnchorFsIdx);
+                        Matcher foMatcher = FO_PATTERN.matcher(segment);
+                        Matcher fontMatcher = FONT_PATTERN.matcher(segment);
+                        Matcher fbMatcher = FB_PATTERN.matcher(segment);
+                        if (foMatcher.find()) {
+                            int x = Integer.parseInt(foMatcher.group(1));
+                            int y = Integer.parseInt(foMatcher.group(2));
+                            int fontH = fontMatcher.find() ? Integer.parseInt(fontMatcher.group(1)) : 28;
+                            int fbLines = fbMatcher.find() ? Integer.parseInt(fbMatcher.group(2)) : 1;
+                            int newY = y + (fontH * fbLines) + 4;
+                            int fontSize = 25;
+                            String field1 = "^FO" + x + "," + newY + "^A0N," + fontSize + "," + fontSize + "^FD" + zoneText + "^FS";
+                            String field2 = "^FO" + (x + 1) + "," + newY + "^A0N," + fontSize + "," + fontSize + "^FD" + zoneText + "^FS";
+                            raw = raw.substring(0, zoneAnchorFsIdx + 3) + "\n" + field1 + "\n" + field2 + raw.substring(zoneAnchorFsIdx + 3);
+                        }
                     }
                 }
 
-                if (anchorFoIdx >= 0 && anchorFsIdx >= 0) {
-                    String segment = raw.substring(anchorFoIdx, anchorFsIdx);
-                    Matcher foMatcher = FO_PATTERN.matcher(segment);
-                    Matcher fontMatcher = FONT_PATTERN.matcher(segment);
-                    Matcher fbMatcher = FB_PATTERN.matcher(segment);
-                    if (foMatcher.find()) {
-                        int x = Integer.parseInt(foMatcher.group(1));
-                        int y = Integer.parseInt(foMatcher.group(2));
-                        int fontH = fontMatcher.find() ? Integer.parseInt(fontMatcher.group(1)) : 28;
-                        int fbLines = fbMatcher.find() ? Integer.parseInt(fbMatcher.group(2)) : 1;
-                        int newY = y + (fontH * fbLines) + 4;
-                        int fontSize = 25;
-                        // Pseudo-bold: imprimir el texto 2 veces con 1 dot de offset
-                        String field1 = "^FO" + x + "," + newY + "^A0N," + fontSize + "," + fontSize + "^FD" + zoneText + "^FS";
-                        String field2 = "^FO" + (x + 1) + "," + newY + "^A0N," + fontSize + "," + fontSize + "^FD" + zoneText + "^FS";
-                        raw = raw.substring(0, anchorFsIdx + 3) + "\n" + field1 + "\n" + field2 + raw.substring(anchorFsIdx + 3);
+                // 2. Inyectar COD.EXT. debajo del último SKU (solo para zonas que no son CARROS)
+                if (extCodeText != null) {
+                    int lastSkuIdx = raw.lastIndexOf("SKU:");
+                    if (lastSkuIdx >= 0) {
+                        int extAnchorFsIdx = raw.indexOf("^FS", lastSkuIdx);
+                        int extAnchorFoIdx = raw.lastIndexOf("^FO", lastSkuIdx);
+                        if (extAnchorFoIdx >= 0 && extAnchorFsIdx >= 0) {
+                            String segment = raw.substring(extAnchorFoIdx, extAnchorFsIdx);
+                            Matcher foMatcher = FO_PATTERN.matcher(segment);
+                            Matcher fontMatcher = FONT_PATTERN.matcher(segment);
+                            Matcher fbMatcher = FB_PATTERN.matcher(segment);
+                            if (foMatcher.find()) {
+                                int x = Integer.parseInt(foMatcher.group(1));
+                                int y = Integer.parseInt(foMatcher.group(2));
+                                int fontH = fontMatcher.find() ? Integer.parseInt(fontMatcher.group(1)) : 28;
+                                int fbLines = fbMatcher.find() ? Integer.parseInt(fbMatcher.group(2)) : 1;
+                                int newY = y + (fontH * fbLines) + 4;
+                                int fontSize = 25;
+                                String field1 = "^FO" + x + "," + newY + "^A0N," + fontSize + "," + fontSize + "^FD" + extCodeText + "^FS";
+                                String field2 = "^FO" + (x + 1) + "," + newY + "^A0N," + fontSize + "," + fontSize + "^FD" + extCodeText + "^FS";
+                                raw = raw.substring(0, extAnchorFsIdx + 3) + "\n" + field1 + "\n" + field2 + raw.substring(extAnchorFsIdx + 3);
+                            }
+                        }
                     }
                 }
                 // Resaltar número de unidad (video inverso) si > 1 y zona no es CARROS ni RETIROS
                 raw = highlightUnitIfNeeded(raw, zone);
+                // Para CARROS con productos listados, resaltar cantidades individuales > 1 (ej: "| 3 u.")
+                if ("CARROS".equals(zone)) {
+                    raw = highlightCarrosProductQuantities(raw);
+                }
                 newLabels.add(new ZplLabel(raw, label.sku(), label.productDescription(), label.details(), label.quantity(), label.turbo(), label.orderIds()));
             }
             newGroups.add(new SortedLabelGroup(zone, group.sku(), group.productDescription(), group.details(), group.orderIds(), newLabels));
@@ -1135,6 +1259,68 @@ public class MainController {
             }
         }
         return rawZpl;
+    }
+
+    private static final Pattern CHECKBOX_PATTERN = Pattern.compile("\\^FO(\\d+),(\\d+)\\^GB30,30,3\\^FS");
+    private static final Pattern PRODUCT_QTY_PATTERN = Pattern.compile("\\|\\s*(\\d+)\\s*u\\.");
+
+    private String highlightCarrosProductQuantities(String rawZpl) {
+        // Buscar checkboxes de productos y detectar cuáles tienen "| N u." con N > 1
+        Matcher m = CHECKBOX_PATTERN.matcher(rawZpl);
+        // Recopilar modificaciones: [checkboxX, checkboxY, removeStart, removeEnd, qty, insertPos]
+        List<int[]> mods = new ArrayList<>();
+
+        while (m.find()) {
+            int x = Integer.parseInt(m.group(1));
+            int y = Integer.parseInt(m.group(2));
+            int afterCheckbox = m.end();
+            int fdStart = rawZpl.indexOf("^FD", afterCheckbox);
+            int fsEnd = fdStart >= 0 ? rawZpl.indexOf("^FS", fdStart) : -1;
+            if (fdStart >= 0 && fsEnd >= 0 && (fdStart - afterCheckbox) < 200) {
+                String fdContent = rawZpl.substring(fdStart + 3, fsEnd);
+                Matcher qtyM = PRODUCT_QTY_PATTERN.matcher(fdContent);
+                if (qtyM.find()) {
+                    int qty = Integer.parseInt(qtyM.group(1));
+                    if (qty > 1) {
+                        int removeStart = fdStart + 3 + qtyM.start();
+                        int removeEnd = fdStart + 3 + qtyM.end();
+                        // Incluir espacio previo al |
+                        if (removeStart > 0 && rawZpl.charAt(removeStart - 1) == ' ') {
+                            removeStart--;
+                        }
+                        mods.add(new int[]{x, y, removeStart, removeEnd, qty, fsEnd + 3});
+                    }
+                }
+            }
+        }
+
+        if (mods.isEmpty()) return rawZpl;
+
+        // Aplicar de atrás hacia adelante para no desplazar índices
+        StringBuilder sb = new StringBuilder(rawZpl);
+        for (int i = mods.size() - 1; i >= 0; i--) {
+            int[] mod = mods.get(i);
+            int checkboxX = mod[0], checkboxY = mod[1];
+            int removeStart = mod[2], removeEnd = mod[3];
+            int qty = mod[4], insertPos = mod[5];
+
+            // Agregar "N u." resaltado (video inverso) al final del área de texto del producto (línea 2)
+            // No usar pseudo-bold con ^FR porque la doble impresión invierte los píxeles de vuelta
+            String qtyText = qty + " u.";
+            int fontSize = 22;
+            int boxW = qtyText.length() * 13 + 8;
+            int boxH = fontSize + 4;
+            // Alinear a la derecha del FB del producto (x=200 + FB570 = 770), en línea 2 (y + 27)
+            int qtyX = 770 - boxW;
+            int qtyY = checkboxY + 27;
+            String boldField = "\n^FO" + qtyX + "," + (qtyY - 1)
+                    + "^GB" + boxW + "," + boxH + "," + boxH + "^FS"
+                    + "\n^FO" + qtyX + "," + (qtyY + 1)
+                    + "^A0N," + fontSize + "," + fontSize + "^FB" + boxW + ",1,0,C^FR^FD" + qtyText + "^FS";
+            sb.insert(insertPos, boldField);
+        }
+
+        return sb.toString();
     }
 
     private int extractQuantityFromLabels(List<ZplLabel> labels) {
@@ -1173,7 +1359,11 @@ public class MainController {
                     group.details(),
                     extractQuantityFromLabels(group.labels())));
         }
-        labelTable.setItems(rows);
+        filteredLabels = new FilteredList<>(rows, p -> true);
+        SortedList<LabelTableRow> sortedLabels = new SortedList<>(filteredLabels);
+        sortedLabels.comparatorProperty().bind(labelTable.comparatorProperty());
+        labelTable.setItems(sortedLabels);
+        searchField.clear();
 
         LabelStatistics stats = result.statistics();
         int totalProductos = result.groups().stream()
@@ -1195,11 +1385,316 @@ public class MainController {
         statsLabel.setText(sj.toString());
         statsBar.setVisible(true);
         statsBar.setManaged(true);
-        searchBar.setVisible(false);
-        searchBar.setManaged(false);
+        searchBar.setVisible(true);
+        searchBar.setManaged(true);
+    }
+
+    /**
+     * Reordena las etiquetas intercalando primera y segunda mitad para compensar
+     * el doblado en acordeón y corte al medio.
+     * Ej: [1,2,3,4,5,6,7,8,9,10,11] con mitad=6 → [1,7,2,8,3,9,4,10,5,11,6]
+     */
+    static <T> List<T> interleaveForPrint(List<T> labels) {
+        int n = labels.size();
+        if (n <= 1) return labels;
+        int mitad = (n + 1) / 2; // ceil(N / 2)
+        List<T> result = new ArrayList<>(n);
+        for (int i = 0; i < mitad; i++) {
+            result.add(labels.get(i));
+            int j = i + mitad;
+            if (j < n) {
+                result.add(labels.get(j));
+            }
+        }
+        return result;
     }
 
     private javafx.stage.Window getWindow() {
         return labelTable.getScene().getWindow();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Pickit Tab
+    // ═══════════════════════════════════════════════════════════════
+
+    private void initPickitTab() {
+        // Audio clips
+        try {
+            errorSound = new AudioClip(getClass().getResource("/ar/com/leo/audios/error.mp3").toExternalForm());
+            successSound = new AudioClip(getClass().getResource("/ar/com/leo/audios/success.mp3").toExternalForm());
+            errorSound.setVolume(0.1);
+            successSound.setVolume(0.1);
+        } catch (Exception e) {
+            AppLogger.warn("No se pudieron cargar los audios de Pickit: " + e.getMessage());
+        }
+
+        // ToggleGroup para los radio de SLA
+        ToggleGroup slaGroup = new ToggleGroup();
+        radioPickitSlaHoy.setToggleGroup(slaGroup);
+        radioPickitSlaTodos.setToggleGroup(slaGroup);
+
+        // Tabla de productos manuales
+        pickitColSku.setCellValueFactory(new PropertyValueFactory<>("sku"));
+        pickitColCantidad.setCellValueFactory(new PropertyValueFactory<>("cantidad"));
+        pickitColSku.setCellFactory(col -> new TableCell<>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? null : item);
+                setStyle("-fx-alignment: CENTER;");
+            }
+        });
+        pickitColCantidad.setCellFactory(col -> new TableCell<>() {
+            @Override
+            protected void updateItem(Double item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                } else {
+                    setText(item == Math.floor(item) ? String.valueOf(item.intValue()) : String.valueOf(item));
+                    setStyle("-fx-alignment: CENTER;");
+                }
+            }
+        });
+        pickitManualTable.setItems(pickitProductosList);
+        lockColumns(pickitManualTable);
+
+        // Listener para editar producto al seleccionar fila
+        pickitManualTable.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal != null) {
+                pickitProductoEnEdicion = newVal;
+                pickitSkuField.setText(newVal.getSku());
+                double cant = newVal.getCantidad();
+                pickitCantidadField.setText(cant == Math.floor(cant) ? String.valueOf((int) cant) : String.valueOf(cant));
+                pickitBtnAgregarModificar.setText("Modificar");
+            } else {
+                pickitProductoEnEdicion = null;
+                pickitBtnAgregarModificar.setText("Agregar");
+            }
+        });
+
+        // Menú contextual para copiar el log
+        ContextMenu logContextMenu = new ContextMenu();
+        MenuItem copiarTodo = new MenuItem("Copiar todo");
+        copiarTodo.setOnAction(e -> {
+            StringBuilder sb = new StringBuilder();
+            for (var node : pickitLogTextFlow.getChildren()) {
+                if (node instanceof Text t) {
+                    sb.append(t.getText());
+                }
+            }
+            ClipboardContent content = new ClipboardContent();
+            content.putString(sb.toString());
+            Clipboard.getSystemClipboard().setContent(content);
+        });
+        logContextMenu.getItems().add(copiarTodo);
+        pickitLogScrollPane.setContextMenu(logContextMenu);
+
+        // Cargar preferencias
+        loadPickitPreferences();
+    }
+
+    private void loadPickitPreferences() {
+        String pathImportDir = pickitPrefs.get("pathImportDir", null);
+        if (pathImportDir != null && !pathImportDir.isBlank()) {
+            File dir = new File(pathImportDir);
+            if (dir.isDirectory()) {
+                pickitImportDir = dir;
+            }
+        }
+        boolean slaHoy = pickitPrefs.getBoolean("slaHoy", true);
+        radioPickitSlaHoy.setSelected(slaHoy);
+        radioPickitSlaTodos.setSelected(!slaHoy);
+    }
+
+    private void savePickitPreferences() {
+        if (pickitImportDir != null) {
+            pickitPrefs.put("pathImportDir", pickitImportDir.getAbsolutePath());
+        }
+        pickitPrefs.putBoolean("slaHoy", radioPickitSlaHoy.isSelected());
+    }
+
+    private void pickitAppendLog(String message, Color color) {
+        Text text = new Text(message + "\n");
+        text.setFill(color);
+        text.setFont(Font.font("Segoe UI", 12));
+        pickitLogTextFlow.getChildren().add(text);
+        pickitLogScrollPane.setVvalue(1.0);
+    }
+
+    @FXML
+    private void onPickitAgregarProducto() {
+        String sku = pickitSkuField.getText();
+        if (sku == null || sku.isBlank()) return;
+        sku = sku.trim();
+
+        if (!sku.matches("\\d+")) {
+            pickitLogTextFlow.getChildren().clear();
+            pickitAppendLog("Error: el SKU debe ser numérico.", Color.FIREBRICK);
+            return;
+        }
+
+        double cantidad = 1;
+        String cantidadText = pickitCantidadField.getText();
+        if (cantidadText != null && !cantidadText.isBlank()) {
+            try {
+                cantidad = Double.parseDouble(cantidadText.trim());
+            } catch (NumberFormatException e) {
+                pickitLogTextFlow.getChildren().clear();
+                pickitAppendLog("Error: cantidad inválida.", Color.FIREBRICK);
+                return;
+            }
+        }
+        if (cantidad <= 0) {
+            pickitLogTextFlow.getChildren().clear();
+            pickitAppendLog("Error: la cantidad debe ser mayor a 0.", Color.FIREBRICK);
+            return;
+        }
+
+        final String skuFinal = sku;
+        boolean duplicado = pickitProductosList.stream()
+                .anyMatch(p -> p.getSku().equalsIgnoreCase(skuFinal) && p != pickitProductoEnEdicion);
+        if (duplicado) {
+            pickitLogTextFlow.getChildren().clear();
+            pickitAppendLog("Error: ya existe un producto con SKU " + sku, Color.FIREBRICK);
+            return;
+        }
+
+        if (pickitProductoEnEdicion != null) {
+            pickitProductoEnEdicion.setSku(sku);
+            pickitProductoEnEdicion.setCantidad(cantidad);
+            pickitManualTable.refresh();
+            pickitProductoEnEdicion = null;
+        } else {
+            pickitProductosList.add(new ProductoManual(sku, cantidad));
+        }
+
+        pickitManualTable.getSelectionModel().clearSelection();
+        pickitBtnAgregarModificar.setText("Agregar");
+        pickitSkuField.clear();
+        pickitCantidadField.clear();
+        pickitSkuField.requestFocus();
+    }
+
+    @FXML
+    private void onPickitEliminarProducto() {
+        ProductoManual selected = pickitManualTable.getSelectionModel().getSelectedItem();
+        if (selected != null) {
+            pickitProductosList.remove(selected);
+            if (selected == pickitProductoEnEdicion) {
+                pickitProductoEnEdicion = null;
+            }
+            pickitManualTable.getSelectionModel().clearSelection();
+            pickitBtnAgregarModificar.setText("Agregar");
+            pickitSkuField.clear();
+            pickitCantidadField.clear();
+        }
+    }
+
+    @FXML
+    private void onPickitLimpiarProductos() {
+        pickitProductosList.clear();
+        pickitProductoEnEdicion = null;
+        pickitManualTable.getSelectionModel().clearSelection();
+        pickitBtnAgregarModificar.setText("Agregar");
+        pickitSkuField.clear();
+        pickitCantidadField.clear();
+    }
+
+    @FXML
+    private void onPickitImportarExcel() {
+        FileChooser fc = new FileChooser();
+        fc.setTitle("Importar productos manuales desde Excel");
+        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Archivo XLSX", "*.xlsx"));
+        File initialDir = (pickitImportDir != null && pickitImportDir.isDirectory())
+                ? pickitImportDir : new File(System.getProperty("user.dir"));
+        fc.setInitialDirectory(initialDir);
+
+        File file = fc.showOpenDialog(getWindow());
+        if (file == null) return;
+
+        pickitImportDir = file.getParentFile();
+        savePickitPreferences();
+        pickitLogTextFlow.getChildren().clear();
+
+        try {
+            List<ProductoManual> importados = ExcelManager.obtenerProductosManualesDesdeExcel(file);
+            int nuevos = 0;
+            int sumados = 0;
+
+            for (ProductoManual importado : importados) {
+                ProductoManual existente = pickitProductosList.stream()
+                        .filter(p -> p.getSku().equalsIgnoreCase(importado.getSku()))
+                        .findFirst().orElse(null);
+                if (existente != null) {
+                    existente.setCantidad(existente.getCantidad() + importado.getCantidad());
+                    sumados++;
+                } else {
+                    pickitProductosList.add(importado);
+                    nuevos++;
+                }
+            }
+
+            pickitManualTable.refresh();
+            pickitAppendLog("Importación completada: " + nuevos + " nuevos, " + sumados + " sumados a existentes.", Color.web("#2E7D32"));
+        } catch (Exception e) {
+            pickitAppendLog("Error al importar: " + e.getMessage(), Color.FIREBRICK);
+            AppLogger.error("Error al importar Excel: " + e.getMessage(), e);
+        }
+    }
+
+    @FXML
+    private void onPickitGenerar() {
+        pickitLogTextFlow.getChildren().clear();
+
+        String stockPath = excelFileField.getText();
+        if (stockPath == null || stockPath.isBlank()) {
+            pickitAppendLog("Error: seleccionar el archivo Excel de stock primero (selector general).", Color.FIREBRICK);
+            return;
+        }
+        File stockFile = new File(stockPath);
+        if (!stockFile.isFile()) {
+            pickitAppendLog("Error: el archivo Excel de stock no existe: " + stockPath, Color.FIREBRICK);
+            return;
+        }
+
+        String combosPath = comboExcelField.getText();
+        if (combosPath == null || combosPath.isBlank()) {
+            pickitAppendLog("Error: seleccionar el archivo Excel de combos primero (selector general).", Color.FIREBRICK);
+            return;
+        }
+        File combosFile = new File(combosPath);
+        if (!combosFile.isFile()) {
+            pickitAppendLog("Error: el archivo Excel de combos no existe: " + combosPath, Color.FIREBRICK);
+            return;
+        }
+
+        savePickitPreferences();
+
+        boolean soloHoy = radioPickitSlaHoy.isSelected();
+        PickitService service = new PickitService(stockFile, combosFile, pickitProductosList, soloHoy, pickitLogTextFlow, pickitLogScrollPane);
+
+        service.setOnRunning(e -> {
+            pickitGenerateBtn.setDisable(true);
+            pickitProgressIndicator.setVisible(true);
+            pickitProgressIndicator.setManaged(true);
+        });
+        service.setOnSucceeded(e -> {
+            if (successSound != null) successSound.play();
+            pickitGenerateBtn.setDisable(false);
+            pickitProgressIndicator.setVisible(false);
+            pickitProgressIndicator.setManaged(false);
+        });
+        service.setOnFailed(e -> {
+            if (errorSound != null) errorSound.play();
+            Throwable ex = service.getException();
+            String mensaje = ex != null ? ex.getLocalizedMessage() : "Error desconocido";
+            pickitAppendLog("\nERROR: " + mensaje, Color.FIREBRICK);
+            AppLogger.error("Error Pickit: " + mensaje, ex);
+            pickitGenerateBtn.setDisable(false);
+            pickitProgressIndicator.setVisible(false);
+            pickitProgressIndicator.setManaged(false);
+        });
+        service.start();
     }
 }

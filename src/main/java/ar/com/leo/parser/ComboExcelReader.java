@@ -2,19 +2,18 @@ package ar.com.leo.parser;
 
 import ar.com.leo.model.ComboComponent;
 import ar.com.leo.model.ComboProduct;
+import org.apache.poi.openxml4j.opc.OPCPackage;
+import org.apache.poi.openxml4j.opc.PackageAccess;
 import org.apache.poi.ss.usermodel.*;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
 public class ComboExcelReader {
 
-    public Map<String, ComboProduct> read(Path excelPath) throws IOException {
-        try (InputStream is = Files.newInputStream(excelPath);
-             Workbook workbook = WorkbookFactory.create(is)) {
+    public Map<String, ComboProduct> read(Path excelPath) throws Exception {
+        try (OPCPackage pkg = OPCPackage.open(excelPath.toFile(), PackageAccess.READ);
+             Workbook workbook = new org.apache.poi.xssf.usermodel.XSSFWorkbook(pkg)) {
             return readFromWorkbook(workbook);
         }
     }

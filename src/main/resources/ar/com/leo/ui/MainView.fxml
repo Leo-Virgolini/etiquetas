@@ -3,6 +3,7 @@
 <?import javafx.geometry.*?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
+<?import javafx.scene.text.TextFlow?>
 
 <BorderPane xmlns="http://javafx.com/javafx" xmlns:fx="http://javafx.com/fxml"
             fx:controller="ar.com.leo.ui.MainController"
@@ -28,100 +29,150 @@
                 </HBox>
             </VBox>
 
-            <TabPane fx:id="tabPane" VBox.vgrow="NEVER">
-                <!-- Tab API MercadoLibre -->
-                <Tab text="&#x1F310; API MercadoLibre" closable="false" styleClass="tab, tab-api">
-                    <VBox spacing="10" styleClass="tab-api-content" style="-fx-padding: 15;">
-                        <HBox spacing="10" alignment="CENTER_LEFT">
-                            <Label fx:id="meliStatusLabel" text="&#x26AA; Estado: No conectado" style="-fx-font-size: 13px;"/>
-                        </HBox>
+            <TabPane fx:id="tabPane" VBox.vgrow="ALWAYS">
+
+                <!-- ══ Tab Pickit ══ -->
+                <Tab text="&#x1F4E6; Pickit" closable="false" styleClass="tab, tab-pickit">
+                    <VBox spacing="10" styleClass="tab-pickit-content" style="-fx-padding: 15;">
+                        <!-- Radio SLA -->
                         <HBox spacing="15" alignment="CENTER_LEFT">
-                            <Button fx:id="fetchOrdersBtn" text="&#x25B6; Paso 1: Obtener &#xD3;rdenes" onAction="#onFetchMeliOrders"
-                                    styleClass="action-button"/>
-                            <Label text="Estado impresi&#xF3;n:"/>
-                            <ComboBox fx:id="estadoFilterCombo" prefWidth="210"/>
-                            <Label text="Despacho:"/>
-                            <ComboBox fx:id="despachoFilterCombo" prefWidth="200"/>
+                            <Label text="Despacho:" style="-fx-font-weight: bold;"/>
+                            <RadioButton fx:id="radioPickitSlaHoy" text="Hasta hoy" selected="true"/>
+                            <RadioButton fx:id="radioPickitSlaTodos" text="Sin l&#xED;mite"/>
+                        </HBox>
+                        <!-- Productos Manuales -->
+                        <VBox spacing="5">
+                            <Label text="&#x1F4CB; Productos manuales:" style="-fx-font-weight: bold;"/>
+                            <HBox spacing="8" alignment="CENTER_LEFT">
+                                <TextField fx:id="pickitSkuField" promptText="SKU" prefWidth="120"/>
+                                <TextField fx:id="pickitCantidadField" promptText="Cant" prefWidth="80"/>
+                                <Button fx:id="pickitBtnAgregarModificar" text="Agregar" onAction="#onPickitAgregarProducto"/>
+                                <Button text="Eliminar" onAction="#onPickitEliminarProducto"/>
+                                <Button text="Limpiar" onAction="#onPickitLimpiarProductos"/>
+                                <Button text="&#x1F4C2; Importar Excel" onAction="#onPickitImportarExcel"/>
+                            </HBox>
+                            <TableView fx:id="pickitManualTable" prefHeight="280" maxHeight="350">
+                                <columns>
+                                    <TableColumn fx:id="pickitColSku" text="SKU" prefWidth="150"/>
+                                    <TableColumn fx:id="pickitColCantidad" text="Cantidad" prefWidth="100"/>
+                                </columns>
+                            </TableView>
+                        </VBox>
+                        <!-- Log panel -->
+                        <ScrollPane fx:id="pickitLogScrollPane" fitToWidth="true" prefHeight="180" VBox.vgrow="ALWAYS"
+                                    style="-fx-background-color: white; -fx-border-color: #ccc;">
+                            <TextFlow fx:id="pickitLogTextFlow" style="-fx-padding: 8;"/>
+                        </ScrollPane>
+                        <!-- Progress + Generar -->
+                        <HBox spacing="15" alignment="CENTER_LEFT">
+                            <Button fx:id="pickitGenerateBtn" text="&#x25B6; Generar Pickit y Carros"
+                                    onAction="#onPickitGenerar" styleClass="action-button"/>
+                            <ProgressIndicator fx:id="pickitProgressIndicator" prefWidth="32" prefHeight="32"
+                                               visible="false" managed="false"/>
                         </HBox>
                     </VBox>
                 </Tab>
 
-                <!-- Tab Archivo Local -->
-                <Tab text="&#x1F4C4; Archivo Local" closable="false" styleClass="tab, tab-local">
-                    <VBox spacing="10" styleClass="tab-local-content" style="-fx-padding: 15;">
-                        <HBox spacing="10" alignment="CENTER_LEFT">
-                            <Label text="&#x1F4C4; Archivo ZPL:" prefWidth="130"/>
-                            <TextField fx:id="zplFileField" HBox.hgrow="ALWAYS" editable="false"
-                                       promptText="Seleccionar archivo .txt con etiquetas ZPL"/>
-                            <Button text="&#x1F4C2; Seleccionar" onAction="#onSelectZplFile"/>
+                <!-- ══ Tab Etiquetas ══ -->
+                <Tab text="&#x1F4CB; Etiquetas" closable="false" styleClass="tab, tab-etiquetas">
+                    <VBox VBox.vgrow="ALWAYS">
+                        <TabPane fx:id="etiquetasSubTabPane" VBox.vgrow="NEVER">
+                            <!-- Tab API MercadoLibre -->
+                            <Tab text="&#x1F310; API MercadoLibre" closable="false" styleClass="tab, tab-api">
+                                <VBox spacing="10" styleClass="tab-api-content" style="-fx-padding: 15;">
+                                    <HBox spacing="10" alignment="CENTER_LEFT">
+                                        <Label fx:id="meliStatusLabel" text="&#x26AA; Estado: No conectado" style="-fx-font-size: 13px;"/>
+                                    </HBox>
+                                    <HBox spacing="15" alignment="CENTER_LEFT">
+                                        <Button fx:id="fetchOrdersBtn" text="&#x25B6; Paso 1: Obtener &#xD3;rdenes" onAction="#onFetchMeliOrders"
+                                                styleClass="action-button"/>
+                                        <Label text="Estado impresi&#xF3;n:"/>
+                                        <ComboBox fx:id="estadoFilterCombo" prefWidth="210"/>
+                                        <Label text="Despacho:"/>
+                                        <ComboBox fx:id="despachoFilterCombo" prefWidth="200"/>
+                                    </HBox>
+                                </VBox>
+                            </Tab>
+
+                            <!-- Tab Archivo Local -->
+                            <Tab text="&#x1F4C4; Archivo Local" closable="false" styleClass="tab, tab-local">
+                                <VBox spacing="10" styleClass="tab-local-content" style="-fx-padding: 15;">
+                                    <HBox spacing="10" alignment="CENTER_LEFT">
+                                        <Label text="&#x1F4C4; Archivo ZPL:" prefWidth="130"/>
+                                        <TextField fx:id="zplFileField" HBox.hgrow="ALWAYS" editable="false"
+                                                   promptText="Seleccionar archivo .txt con etiquetas ZPL"/>
+                                        <Button text="&#x1F4C2; Seleccionar" onAction="#onSelectZplFile"/>
+                                    </HBox>
+                                    <HBox alignment="CENTER_LEFT">
+                                        <Button text="&#x25B6; Procesar" onAction="#onProcessLocal" styleClass="action-button"/>
+                                    </HBox>
+                                </VBox>
+                            </Tab>
+                        </TabPane>
+
+                        <!-- Estadisticas -->
+                        <HBox fx:id="statsBar" spacing="15" alignment="CENTER_LEFT" styleClass="stats-bar"
+                              managed="false" visible="false">
+                            <padding><Insets top="8" bottom="8" left="15" right="15"/></padding>
+                            <Label fx:id="statsLabel" styleClass="stats-label" text="" HBox.hgrow="ALWAYS"/>
                         </HBox>
-                        <HBox alignment="CENTER_LEFT">
-                            <Button text="&#x25B6; Procesar" onAction="#onProcessLocal" styleClass="action-button"/>
+                        <HBox fx:id="searchBar" alignment="CENTER_LEFT" managed="false" visible="false"
+                              style="-fx-padding: 8 15 8 15;">
+                            <TextField fx:id="searchField" promptText="&#x1F50D; Buscar por orden, SKU, zona, producto..." prefWidth="350"/>
+                        </HBox>
+
+                        <!-- Tablas + Progress Indicator centrado -->
+                        <StackPane VBox.vgrow="ALWAYS">
+                            <!-- Tabla de ordenes (oculta inicialmente) -->
+                            <TableView fx:id="orderTable" managed="false" visible="false">
+                                <placeholder>
+                                    <Label text="&#x1F4CB; Haga clic en 'Obtener &#xD3;rdenes' para cargar las &#xF3;rdenes de ML" style="-fx-font-size: 14px; -fx-text-fill: #888;"/>
+                                </placeholder>
+                                <columns>
+                                    <TableColumn fx:id="orderSelectCol" text="&#x2713;" prefWidth="40" minWidth="40" maxWidth="40"/>
+                                    <TableColumn fx:id="orderIdCol" text="Orden" prefWidth="150" minWidth="120"/>
+                                    <TableColumn fx:id="orderZoneCol" text="Zona" prefWidth="70" minWidth="50"/>
+                                    <TableColumn fx:id="orderSkuCol" text="SKU" prefWidth="100" minWidth="70"/>
+                                    <TableColumn fx:id="orderDescCol" text="Producto" prefWidth="550" minWidth="250"/>
+                                    <TableColumn fx:id="orderQtyCol" text="Cantidad" prefWidth="70" minWidth="60" maxWidth="90"/>
+                                    <TableColumn fx:id="orderStatusCol" text="Estado" prefWidth="150" minWidth="120"/>
+                                    <TableColumn fx:id="orderSlaCol" text="Despacho" prefWidth="140" minWidth="100"/>
+                                </columns>
+                            </TableView>
+
+                            <!-- Tabla de etiquetas -->
+                            <TableView fx:id="labelTable">
+                                <placeholder>
+                                    <Label text="&#x1F4E6; Cargue etiquetas ZPL para ver el resultado ordenado" style="-fx-font-size: 14px; -fx-text-fill: #888;"/>
+                                </placeholder>
+                                <columns>
+                                    <TableColumn fx:id="labelOrderCol" text="Orden" prefWidth="120" minWidth="80"/>
+                                    <TableColumn fx:id="zoneCol" text="Zona" prefWidth="100" minWidth="60"/>
+                                    <TableColumn fx:id="skuCol" text="SKU" prefWidth="110" minWidth="70"/>
+                                    <TableColumn fx:id="descCol" text="Producto" prefWidth="350" minWidth="150"/>
+                                    <TableColumn fx:id="detailsCol" text="Detalles" prefWidth="350" minWidth="150"/>
+                                    <TableColumn fx:id="countCol" text="Cantidad" prefWidth="80" minWidth="65" maxWidth="100"/>
+                                </columns>
+                            </TableView>
+
+                            <!-- Progress Indicator centrado sobre la tabla -->
+                            <ProgressIndicator fx:id="progressIndicator" prefWidth="64" prefHeight="64"
+                                               visible="false" managed="false"
+                                               StackPane.alignment="CENTER"/>
+                        </StackPane>
+
+                        <!-- Botones de accion -->
+                        <HBox spacing="15" alignment="CENTER_RIGHT" style="-fx-padding: 10 15 10 15;">
+                            <Button fx:id="backToOrdersBtn" text="&#x2B05; Volver a &#xF3;rdenes buscadas" onAction="#onBackToOrders"
+                                    styleClass="action-button" visible="false" managed="false"/>
+                            <Button fx:id="downloadLabelsBtn" text="&#x1F4E5; Paso 2: Descargar Etiquetas" onAction="#onDownloadSelectedLabels"
+                                    styleClass="action-button" disable="true"/>
+                            <Button fx:id="comboSheetBtn" text="&#x1F4CB; Combos" onAction="#onShowComboSheet" styleClass="action-button" disable="true"/>
+                            <Button fx:id="printDirectBtn" text="&#x1F5A8; Imprimir Directo" onAction="#onPrintDirect" styleClass="action-button" disable="true"/>
                         </HBox>
                     </VBox>
                 </Tab>
             </TabPane>
-
-            <!-- Estadisticas -->
-            <HBox fx:id="statsBar" spacing="15" alignment="CENTER_LEFT" styleClass="stats-bar"
-                  managed="false" visible="false">
-                <padding><Insets top="8" bottom="8" left="15" right="15"/></padding>
-                <Label fx:id="statsLabel" styleClass="stats-label" text="" HBox.hgrow="ALWAYS"/>
-            </HBox>
-            <HBox fx:id="searchBar" alignment="CENTER_LEFT" managed="false" visible="false"
-                  style="-fx-padding: 8 15 8 15;">
-                <TextField fx:id="searchField" promptText="&#x1F50D; Buscar por nro. de orden..." prefWidth="280"/>
-            </HBox>
-
-            <!-- Tablas + Progress Indicator centrado -->
-            <StackPane VBox.vgrow="ALWAYS">
-                <!-- Tabla de ordenes (oculta inicialmente) -->
-                <TableView fx:id="orderTable" managed="false" visible="false">
-                    <placeholder>
-                        <Label text="&#x1F4CB; Haga clic en 'Obtener &#xD3;rdenes' para cargar las &#xF3;rdenes de ML" style="-fx-font-size: 14px; -fx-text-fill: #888;"/>
-                    </placeholder>
-                    <columns>
-                        <TableColumn fx:id="orderSelectCol" text="&#x2713;" prefWidth="40" minWidth="40" maxWidth="40"/>
-                        <TableColumn fx:id="orderIdCol" text="Orden" prefWidth="150" minWidth="120"/>
-                        <TableColumn fx:id="orderZoneCol" text="Zona" prefWidth="70" minWidth="50"/>
-                        <TableColumn fx:id="orderSkuCol" text="SKU" prefWidth="100" minWidth="70"/>
-                        <TableColumn fx:id="orderDescCol" text="Producto" prefWidth="550" minWidth="250"/>
-                        <TableColumn fx:id="orderQtyCol" text="Cantidad" prefWidth="70" minWidth="60" maxWidth="90"/>
-                        <TableColumn fx:id="orderStatusCol" text="Estado" prefWidth="150" minWidth="120"/>
-                        <TableColumn fx:id="orderSlaCol" text="Despacho" prefWidth="140" minWidth="100"/>
-                    </columns>
-                </TableView>
-
-                <!-- Tabla de etiquetas -->
-                <TableView fx:id="labelTable">
-                    <placeholder>
-                        <Label text="&#x1F4E6; Cargue etiquetas ZPL para ver el resultado ordenado" style="-fx-font-size: 14px; -fx-text-fill: #888;"/>
-                    </placeholder>
-                    <columns>
-                        <TableColumn fx:id="labelOrderCol" text="Orden" prefWidth="120" minWidth="80"/>
-                        <TableColumn fx:id="zoneCol" text="Zona" prefWidth="100" minWidth="60"/>
-                        <TableColumn fx:id="skuCol" text="SKU" prefWidth="110" minWidth="70"/>
-                        <TableColumn fx:id="descCol" text="Producto" prefWidth="350" minWidth="150"/>
-                        <TableColumn fx:id="detailsCol" text="Detalles" prefWidth="350" minWidth="150"/>
-                        <TableColumn fx:id="countCol" text="Cantidad" prefWidth="80" minWidth="65" maxWidth="100"/>
-                    </columns>
-                </TableView>
-
-                <!-- Progress Indicator centrado sobre la tabla -->
-                <ProgressIndicator fx:id="progressIndicator" prefWidth="64" prefHeight="64"
-                                   visible="false" managed="false"
-                                   StackPane.alignment="CENTER"/>
-            </StackPane>
-
-            <!-- Botones de accion -->
-            <HBox spacing="15" alignment="CENTER_RIGHT" style="-fx-padding: 10 15 10 15;">
-                <Button fx:id="backToOrdersBtn" text="&#x2B05; Volver a &#xF3;rdenes buscadas" onAction="#onBackToOrders"
-                        styleClass="action-button" visible="false" managed="false"/>
-                <Button fx:id="downloadLabelsBtn" text="&#x1F4E5; Paso 2: Descargar Etiquetas" onAction="#onDownloadSelectedLabels"
-                        styleClass="action-button" disable="true"/>
-                <Button fx:id="comboSheetBtn" text="&#x1F4CB; Combos" onAction="#onShowComboSheet" styleClass="action-button" disable="true"/>
-<Button fx:id="printDirectBtn" text="&#x1F5A8; Imprimir Directo" onAction="#onPrintDirect" styleClass="action-button" disable="true"/>
-            </HBox>
         </VBox>
     </center>
 </BorderPane>

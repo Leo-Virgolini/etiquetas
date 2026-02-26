@@ -1,11 +1,11 @@
 package ar.com.leo.parser;
 
+import org.apache.poi.openxml4j.opc.OPCPackage;
+import org.apache.poi.openxml4j.opc.PackageAccess;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
@@ -14,9 +14,9 @@ import ar.com.leo.model.ExcelMapping;
 
 public class ExcelMappingReader {
 
-    public ExcelMapping readMapping(Path excelPath) throws IOException {
-        try (InputStream is = Files.newInputStream(excelPath);
-             Workbook workbook = new XSSFWorkbook(is)) {
+    public ExcelMapping readMapping(Path excelPath) throws Exception {
+        try (OPCPackage pkg = OPCPackage.open(excelPath.toFile(), PackageAccess.READ);
+             Workbook workbook = new XSSFWorkbook(pkg)) {
             return readFromWorkbook(workbook);
         }
     }
