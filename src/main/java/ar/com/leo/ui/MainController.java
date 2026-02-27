@@ -11,6 +11,7 @@ import ar.com.leo.parser.ComboExcelReader;
 import ar.com.leo.parser.ExcelMappingReader;
 import ar.com.leo.parser.ZplParser;
 import ar.com.leo.pickit.excel.ExcelManager;
+import ar.com.leo.pedidos.service.PedidosService;
 import ar.com.leo.pickit.model.ProductoManual;
 import ar.com.leo.pickit.service.PickitService;
 import ar.com.leo.printer.PrinterDiscovery;
@@ -151,6 +152,16 @@ public class MainController {
     private ProgressIndicator pickitProgressIndicator;
     @FXML
     private Button pickitGenerateBtn;
+
+    // ── Pedidos Tab ──
+    @FXML
+    private ScrollPane pedidosLogScrollPane;
+    @FXML
+    private TextFlow pedidosLogTextFlow;
+    @FXML
+    private ProgressIndicator pedidosProgressIndicator;
+    @FXML
+    private Button pedidosGenerateBtn;
 
     private final ZplParser zplParser = new ZplParser();
     private final ExcelMappingReader excelReader = new ExcelMappingReader();
@@ -393,6 +404,9 @@ public class MainController {
 
         // ── Pickit Tab init ──
         initPickitTab();
+
+        // ── Pedidos Tab init ──
+        initPedidosTab();
     }
 
     @FXML
@@ -811,12 +825,25 @@ public class MainController {
                 }
             }
 
-            List<ComboProduct> matchingCombos = new ArrayList<>();
+            // Crear mapa normalizado de combos para matchear por SKU numérico
+            Map<String, ComboProduct> normalizedCombos = new LinkedHashMap<>();
             for (var entry : allCombos.entrySet()) {
-                if (batchSkus.contains(entry.getKey())) {
+                normalizedCombos.put(entry.getKey(), entry.getValue());
+                // También indexar por SKU normalizado (solo dígitos)
+                String normalized = ZplParser.normalizeSku(entry.getKey());
+                if (normalized != null && !normalized.startsWith("SKU INVALIDO")) {
+                    normalizedCombos.putIfAbsent(normalized, entry.getValue());
+                }
+            }
+
+            List<ComboProduct> matchingCombos = new ArrayList<>();
+            Set<String> matched = new HashSet<>();
+            for (var entry : normalizedCombos.entrySet()) {
+                if (batchSkus.contains(entry.getKey()) && matched.add(entry.getValue().codigoCompuesto())) {
                     matchingCombos.add(entry.getValue());
                 }
             }
+
             matchingCombos.sort(Comparator.comparing(ComboProduct::codigoCompuesto));
             return matchingCombos;
         } catch (Exception e) {
@@ -1178,11 +1205,20 @@ public class MainController {
                 int lhIdx = raw.indexOf("^LH");
                 int insertIdx = lhIdx >= 0 ? lhIdx : raw.indexOf("^XA") + 3;
                 // ^LH0,0 resetea el label home a (0,0) para que ^FO use coordenadas absolutas
-                String posField1 = "^FO15,15^A0N,35,35^FD" + posText + "^FS";
-                String posField2 = "^FO16,15^A0N,35,35^FD" + posText + "^FS";
-                String posField3 = "^FO15,16^A0N,35,35^FD" + posText + "^FS";
+                String posField1 = "^FO45,15^A0N,35,35^FD" + posText + "^FS";
+                String posField2 = "^FO46,15^A0N,35,35^FD" + posText + "^FS";
+                String posField3 = "^FO45,16^A0N,35,35^FD" + posText + "^FS";
                 raw = raw.substring(0, insertIdx) + "^LH0,0\n" + posField1 + "\n" + posField2 + "\n" + posField3 + "\n" + raw.substring(insertIdx);
                 labelPosition++;
+
+                // Parsear ^LH original para convertir coordenadas relativas a absolutas
+                int origLhX = 0, origLhY = 0;
+                Matcher lhMatcher = Pattern.compile("\\^LH(\\d+),(\\d+)").matcher(raw);
+                // Buscar el segundo ^LH (el primero es el ^LH0,0 inyectado para #X)
+                if (lhMatcher.find() && lhMatcher.find()) {
+                    origLhX = Integer.parseInt(lhMatcher.group(1));
+                    origLhY = Integer.parseInt(lhMatcher.group(2));
+                }
 
                 // 1. Inyectar ZONA siempre debajo de "Unidades"
                 int unidadIdx = raw.indexOf("Unidad");
@@ -1201,9 +1237,13 @@ public class MainController {
                             int fbLines = fbMatcher.find() ? Integer.parseInt(fbMatcher.group(2)) : 1;
                             int newY = y + (fontH * fbLines) + 4;
                             int fontSize = 25;
-                            String field1 = "^FO" + x + "," + newY + "^A0N," + fontSize + "," + fontSize + "^FD" + zoneText + "^FS";
-                            String field2 = "^FO" + (x + 1) + "," + newY + "^A0N," + fontSize + "," + fontSize + "^FD" + zoneText + "^FS";
-                            raw = raw.substring(0, zoneAnchorFsIdx + 3) + "\n" + field1 + "\n" + field2 + raw.substring(zoneAnchorFsIdx + 3);
+                            // Usar coordenadas absolutas (^LH0,0) para alinear con la tijera/logo
+                            int absZoneX = 20;
+                            int absZoneY = origLhY + newY;
+                            String field1 = "^LH0,0\n^FO" + absZoneX + "," + absZoneY + "^A0N," + fontSize + "," + fontSize + "^FD" + zoneText + "^FS";
+                            String field2 = "^FO" + (absZoneX + 1) + "," + absZoneY + "^A0N," + fontSize + "," + fontSize + "^FD" + zoneText + "^FS";
+                            String restoreLh = "\n^LH" + origLhX + "," + origLhY;
+                            raw = raw.substring(0, zoneAnchorFsIdx + 3) + "\n" + field1 + "\n" + field2 + restoreLh + raw.substring(zoneAnchorFsIdx + 3);
                         }
                     }
                 }
@@ -1275,16 +1315,77 @@ public class MainController {
 
     private static final Pattern CHECKBOX_PATTERN = Pattern.compile("\\^FO(\\d+),(\\d+)\\^GB30,30,3\\^FS");
     private static final Pattern PRODUCT_QTY_PATTERN = Pattern.compile("\\|\\s*(\\d+)\\s*u\\.");
+    /** Convierte texto ZPL con ^FH hex a forma renderizada: cada secuencia UTF-8 (_C3_A9 etc.) se reemplaza por 'X'. */
+    private static String toRenderedForm(String fdText) {
+        StringBuilder sb = new StringBuilder();
+        int i = 0;
+        while (i < fdText.length()) {
+            if (i + 2 < fdText.length() && fdText.charAt(i) == '_'
+                    && isHexDigit(fdText.charAt(i + 1)) && isHexDigit(fdText.charAt(i + 2))) {
+                int firstByte = Integer.parseInt(fdText.substring(i + 1, i + 3), 16);
+                i += 3;
+                int extraBytes = 0;
+                if (firstByte >= 0xC0 && firstByte < 0xE0) extraBytes = 1;
+                else if (firstByte >= 0xE0 && firstByte < 0xF0) extraBytes = 2;
+                else if (firstByte >= 0xF0) extraBytes = 3;
+                for (int b = 0; b < extraBytes; b++) {
+                    if (i + 2 < fdText.length() && fdText.charAt(i) == '_'
+                            && isHexDigit(fdText.charAt(i + 1)) && isHexDigit(fdText.charAt(i + 2))) {
+                        i += 3;
+                    } else break;
+                }
+                sb.append('X');
+            } else {
+                sb.append(fdText.charAt(i));
+                i++;
+            }
+        }
+        return sb.toString();
+    }
+
+    /** Cuenta caracteres renderizados en texto ZPL con ^FH (hex). Secuencias _XX cuentan como parte de un solo carácter UTF-8. */
+    private static int countRenderedChars(String fdText) {
+        int count = 0;
+        int i = 0;
+        while (i < fdText.length()) {
+            if (i + 2 < fdText.length() && fdText.charAt(i) == '_'
+                    && isHexDigit(fdText.charAt(i + 1)) && isHexDigit(fdText.charAt(i + 2))) {
+                // Inicio de secuencia hex UTF-8: _C3_A9 = 1 carácter renderizado
+                int firstByte = Integer.parseInt(fdText.substring(i + 1, i + 3), 16);
+                i += 3; // consumir _XX
+                // Determinar cuántos bytes de continuación esperar según el primer byte UTF-8
+                int extraBytes = 0;
+                if (firstByte >= 0xC0 && firstByte < 0xE0) extraBytes = 1;
+                else if (firstByte >= 0xE0 && firstByte < 0xF0) extraBytes = 2;
+                else if (firstByte >= 0xF0) extraBytes = 3;
+                // Consumir bytes de continuación _XX
+                for (int b = 0; b < extraBytes; b++) {
+                    if (i + 2 < fdText.length() && fdText.charAt(i) == '_'
+                            && isHexDigit(fdText.charAt(i + 1)) && isHexDigit(fdText.charAt(i + 2))) {
+                        i += 3;
+                    } else {
+                        break;
+                    }
+                }
+                count++;
+            } else {
+                count++;
+                i++;
+            }
+        }
+        return count;
+    }
+
+    private static boolean isHexDigit(char c) {
+        return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
+    }
 
     private String highlightCarrosProductQuantities(String rawZpl) {
         // Buscar checkboxes de productos y detectar cuáles tienen "| N u." con N > 1
         Matcher m = CHECKBOX_PATTERN.matcher(rawZpl);
-        // Recopilar modificaciones: [checkboxX, checkboxY, removeStart, removeEnd, qty, insertPos]
         List<int[]> mods = new ArrayList<>();
 
         while (m.find()) {
-            int x = Integer.parseInt(m.group(1));
-            int y = Integer.parseInt(m.group(2));
             int afterCheckbox = m.end();
             int fdStart = rawZpl.indexOf("^FD", afterCheckbox);
             int fsEnd = fdStart >= 0 ? rawZpl.indexOf("^FS", fdStart) : -1;
@@ -1300,7 +1401,85 @@ public class MainController {
                         if (removeStart > 0 && rawZpl.charAt(removeStart - 1) == ' ') {
                             removeStart--;
                         }
-                        mods.add(new int[]{x, y, removeStart, removeEnd, qty, fsEnd + 3});
+
+                        // Parsear posición y fuente del campo de texto del producto
+                        String fieldSetup = rawZpl.substring(afterCheckbox, fdStart);
+                        Matcher foM = FO_PATTERN.matcher(fieldSetup);
+                        int textX = 200, textY = Integer.parseInt(m.group(2));
+                        if (foM.find()) {
+                            textX = Integer.parseInt(foM.group(1));
+                            textY = Integer.parseInt(foM.group(2));
+                        }
+                        Matcher fontM = FONT_PATTERN.matcher(fieldSetup);
+                        int fontH = 22, fontW = 22;
+                        if (fontM.find()) {
+                            fontH = Integer.parseInt(fontM.group(1));
+                            fontW = Integer.parseInt(fontM.group(2));
+                            if (fontW == 0) fontW = fontH;
+                        }
+                        Matcher fbM = FB_PATTERN.matcher(fieldSetup);
+                        int fbWidth = 570;
+                        int fbLines = 2;
+                        if (fbM.find()) {
+                            fbWidth = Integer.parseInt(fbM.group(1));
+                            fbLines = Integer.parseInt(fbM.group(2));
+                        }
+
+                        // Calcular texto restante (sin " | N u.")
+                        int fdContentRemoveStart = removeStart - (fdStart + 3);
+                        int fdContentRemoveEnd = removeEnd - (fdStart + 3);
+                        String remainingText = fdContent.substring(0, fdContentRemoveStart) + fdContent.substring(fdContentRemoveEnd);
+
+                        // Detectar si el texto fue truncado por ML (termina con "...")
+                        boolean isTruncated = remainingText.endsWith(" ...") || remainingText.endsWith("...");
+
+                        // Si termina con "...", quitarlos para posicionar badge SOBRE ellos
+                        String textForPos = remainingText;
+                        if (textForPos.endsWith(" ...")) {
+                            textForPos = textForPos.substring(0, textForPos.length() - 4);
+                        } else if (textForPos.endsWith("...")) {
+                            textForPos = textForPos.substring(0, textForPos.length() - 3);
+                        }
+
+                        // Convertir a forma renderizada (hex → char placeholder) para simular word-wrap
+                        String rendered = toRenderedForm(textForPos);
+                        // Factor alto para word-wrap (conservativo, coincide con wrapping real de ZPL)
+                        double wrapCharW = fontW * 0.48;
+                        int charsPerLine = Math.max(1, (int) (fbWidth / wrapCharW));
+
+                        // Simular word-wrap de ^FB para encontrar posición en la última línea
+                        int lineNum = 0;
+                        int pos = 0;
+                        int lastLineChars = 0;
+                        while (pos < rendered.length()) {
+                            int remaining = rendered.length() - pos;
+                            if (remaining <= charsPerLine) {
+                                lastLineChars = remaining;
+                                break;
+                            }
+                            int maxEnd = pos + charsPerLine;
+                            int lastSpace = rendered.lastIndexOf(' ', maxEnd);
+                            if (lastSpace > pos) {
+                                pos = lastSpace + 1;
+                            } else {
+                                pos = maxEnd;
+                            }
+                            lineNum++;
+                        }
+
+                        // Para texto truncado, usar ^FB line count para Y (ML llena todas las líneas)
+                        if (isTruncated && fbLines > 1) {
+                            lineNum = fbLines - 1;
+                        }
+
+                        // Factor de posición: truncado usa factor alto (badge cubre "..."),
+                        // no truncado usa factor bajo (badge pegado al texto)
+                        double posCharW = isTruncated ? fontW * 0.48 : fontW * 0.40;
+                        int padding = isTruncated ? 20 : 4;
+                        int qtyX = textX + (int) (lastLineChars * posCharW) + padding;
+                        int qtyY = textY + lineNum * fontH;
+
+                        mods.add(new int[]{qty, qtyX, qtyY, fontH, removeStart, removeEnd, fsEnd + 3});
                     }
                 }
             }
@@ -1312,24 +1491,23 @@ public class MainController {
         StringBuilder sb = new StringBuilder(rawZpl);
         for (int i = mods.size() - 1; i >= 0; i--) {
             int[] mod = mods.get(i);
-            int checkboxX = mod[0], checkboxY = mod[1];
-            int removeStart = mod[2], removeEnd = mod[3];
-            int qty = mod[4], insertPos = mod[5];
+            int qty = mod[0], qtyX = mod[1], qtyY = mod[2];
+            int fontH = mod[3];
+            int removeStart = mod[4], removeEnd = mod[5];
+            int insertPos = mod[6];
 
-            // Agregar "N u." resaltado (video inverso) al final del área de texto del producto (línea 2)
-            // No usar pseudo-bold con ^FR porque la doble impresión invierte los píxeles de vuelta
+            // Superponer "N u." resaltado (video inverso) sobre el texto original
             String qtyText = qty + " u.";
-            int fontSize = 22;
+            int fontSize = Math.min(fontH, 22);
             int boxW = qtyText.length() * 13 + 8;
             int boxH = fontSize + 4;
-            // Alinear a la derecha del FB del producto (x=200 + FB570 = 770), en línea 2 (y + 27)
-            int qtyX = 770 - boxW;
-            int qtyY = checkboxY + 27;
             String boldField = "\n^FO" + qtyX + "," + (qtyY - 1)
                     + "^GB" + boxW + "," + boxH + "," + boxH + "^FS"
                     + "\n^FO" + qtyX + "," + (qtyY + 1)
                     + "^A0N," + fontSize + "," + fontSize + "^FB" + boxW + ",1,0,C^FR^FD" + qtyText + "^FS";
+            // Primero insertar el campo resaltado (posición posterior), luego borrar " | N u." del texto original
             sb.insert(insertPos, boldField);
+            sb.delete(removeStart, removeEnd);
         }
 
         return sb.toString();
@@ -1709,6 +1887,66 @@ public class MainController {
             pickitGenerateBtn.setDisable(false);
             pickitProgressIndicator.setVisible(false);
             pickitProgressIndicator.setManaged(false);
+        });
+        service.start();
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // ══ Pedidos Tab ══
+    // ══════════════════════════════════════════════════════════════
+
+    private void initPedidosTab() {
+        ContextMenu logContextMenu = new ContextMenu();
+        MenuItem copiarTodo = new MenuItem("Copiar todo");
+        copiarTodo.setOnAction(e -> {
+            StringBuilder sb = new StringBuilder();
+            for (var node : pedidosLogTextFlow.getChildren()) {
+                if (node instanceof Text t) {
+                    sb.append(t.getText());
+                }
+            }
+            ClipboardContent content = new ClipboardContent();
+            content.putString(sb.toString());
+            Clipboard.getSystemClipboard().setContent(content);
+        });
+        logContextMenu.getItems().add(copiarTodo);
+        pedidosLogScrollPane.setContextMenu(logContextMenu);
+    }
+
+    private void pedidosAppendLog(String message, Color color) {
+        Text text = new Text(message + "\n");
+        text.setFill(color);
+        text.setFont(Font.font("Segoe UI", 12));
+        pedidosLogTextFlow.getChildren().add(text);
+        pedidosLogScrollPane.setVvalue(1.0);
+    }
+
+    @FXML
+    private void onPedidosGenerar() {
+        pedidosLogTextFlow.getChildren().clear();
+
+        PedidosService service = new PedidosService(pedidosLogTextFlow, pedidosLogScrollPane);
+
+        service.setOnRunning(e -> {
+            pedidosGenerateBtn.setDisable(true);
+            pedidosProgressIndicator.setVisible(true);
+            pedidosProgressIndicator.setManaged(true);
+        });
+        service.setOnSucceeded(e -> {
+            if (successSound != null) successSound.play();
+            pedidosGenerateBtn.setDisable(false);
+            pedidosProgressIndicator.setVisible(false);
+            pedidosProgressIndicator.setManaged(false);
+        });
+        service.setOnFailed(e -> {
+            if (errorSound != null) errorSound.play();
+            Throwable ex = service.getException();
+            String mensaje = ex != null ? ex.getLocalizedMessage() : "Error desconocido";
+            pedidosAppendLog("\nERROR: " + mensaje, Color.FIREBRICK);
+            AppLogger.error("Error Pedidos: " + mensaje, ex);
+            pedidosGenerateBtn.setDisable(false);
+            pedidosProgressIndicator.setVisible(false);
+            pedidosProgressIndicator.setManaged(false);
         });
         service.start();
     }

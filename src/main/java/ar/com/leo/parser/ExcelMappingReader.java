@@ -88,7 +88,11 @@ public class ExcelMappingReader {
     }
 
     private String getCellStringValue(Cell cell) {
-        return switch (cell.getCellType()) {
+        CellType type = cell.getCellType();
+        if (type == CellType.FORMULA) {
+            type = cell.getCachedFormulaResultType();
+        }
+        return switch (type) {
             case STRING -> cell.getStringCellValue();
             case NUMERIC -> {
                 double val = cell.getNumericCellValue();

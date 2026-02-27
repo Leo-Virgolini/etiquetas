@@ -92,12 +92,14 @@
 
 /* ── Tabs principales más grandes ── */
 .tab-etiquetas > .tab-container,
-.tab-pickit > .tab-container {
+.tab-pickit > .tab-container,
+.tab-pedidos > .tab-container {
     -fx-padding: 8 0 8 0;
     -fx-alignment: CENTER;
 }
 .tab-etiquetas > .tab-container > .tab-label,
-.tab-pickit > .tab-container > .tab-label {
+.tab-pickit > .tab-container > .tab-label,
+.tab-pedidos > .tab-container > .tab-label {
     -fx-font-size: 15px;
     -fx-font-weight: bold;
 }
@@ -125,4 +127,18 @@
 }
 .tab-pickit-content {
     -fx-background-color: #E8F0FE;
+}
+
+/* ── Tab Pedidos (verde) ── */
+.tab-pedidos > .tab-container {
+    -fx-background-color: #E8F5E9;
+}
+.tab-pedidos:selected > .tab-container {
+    -fx-background-color: #81C784;
+}
+.tab-pedidos .tab-label {
+    -fx-text-fill: #2E7D32;
+}
+.tab-pedidos-content {
+    -fx-background-color: #F1F8E9;
 }

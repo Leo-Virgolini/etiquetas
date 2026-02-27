@@ -270,9 +270,13 @@ public class MercadoLibreAPI {
     // -----------------------------------------------------------------------------------------------------------------
 
     /**
-     * Descarga etiquetas ZPL para las órdenes ready_to_ship y las devuelve como List<ZplLabel>
+     * Descarga etiquetas ZPL para las órdenes ready_to_ship y las devuelve como List&lt;ZplLabel&gt;
      * enriquecidas con SKU y descripción de las órdenes.
-     * @param soloSlaHoy si es true, filtra ready_to_print con SLA <= hoy y printed con SLA >= hoy
+     * <p><b>IMPORTANTE:</b> La API de MercadoLibre cambia automáticamente el substatus de los envíos
+     * de {@code ready_to_print} a {@code printed} al descargar las etiquetas vía
+     * {@code GET /shipment_labels}. Este es un efecto colateral del endpoint de ML,
+     * no una acción explícita de esta aplicación.</p>
+     * @param soloSlaHoy si es true, filtra ready_to_print con SLA &lt;= hoy y printed con SLA &gt;= hoy
      */
     public static List<ZplLabel> descargarEtiquetasZpl(String userId, boolean incluirImpresas, boolean soloSlaHoy) {
         MLOrderResult result = obtenerVentasReadyToPrint(userId, incluirImpresas);
@@ -411,6 +415,8 @@ public class MercadoLibreAPI {
 
     /**
      * Descarga un batch de etiquetas ZPL (máximo 50 shipment IDs).
+     * <p><b>IMPORTANTE:</b> ML cambia el substatus de {@code ready_to_print} a {@code printed}
+     * automáticamente al llamar a {@code GET /shipment_labels}.</p>
      */
     private static List<ZplLabel> descargarBatchZpl(List<Long> shipmentIds, Map<Long, SkuInfo> skuMap, Set<Long> turboShipmentIds) {
         verificarTokens();

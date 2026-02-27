@@ -1,6 +1,7 @@
 package ar.com.leo;
 
 import ar.com.leo.api.ml.MercadoLibreAPI;
+import ar.com.leo.pedidos.service.PedidosGenerator;
 import ar.com.leo.pickit.service.PickitGenerator;
 import atlantafx.base.theme.PrimerLight;
 import javafx.application.Application;
@@ -30,6 +31,7 @@ public class EtiquetasApp extends Application {
     public void stop() {
         MercadoLibreAPI.shutdownExecutors();
         PickitGenerator.shutdownExecutors();
+        PedidosGenerator.shutdownExecutors();
     }
 
     public static void main(String[] args) {

@@ -171,6 +171,23 @@
                         </HBox>
                     </VBox>
                 </Tab>
+
+                <!-- ══ Tab Pedidos ══ -->
+                <Tab text="&#x1F4C4; Pedidos" closable="false" styleClass="tab, tab-pedidos">
+                    <VBox spacing="10" styleClass="tab-pedidos-content" style="-fx-padding: 15;">
+                        <ScrollPane fx:id="pedidosLogScrollPane" fitToWidth="true"
+                                    prefHeight="400" VBox.vgrow="ALWAYS"
+                                    style="-fx-background-color: white; -fx-border-color: #ccc;">
+                            <TextFlow fx:id="pedidosLogTextFlow" style="-fx-padding: 8;"/>
+                        </ScrollPane>
+                        <HBox spacing="15" alignment="CENTER_LEFT">
+                            <Button fx:id="pedidosGenerateBtn" text="&#x25B6; Generar Pedidos y Etiquetas"
+                                    onAction="#onPedidosGenerar" styleClass="action-button"/>
+                            <ProgressIndicator fx:id="pedidosProgressIndicator" prefWidth="32" prefHeight="32"
+                                               visible="false" managed="false"/>
+                        </HBox>
+                    </VBox>
+                </Tab>
             </TabPane>
         </VBox>
     </center>
