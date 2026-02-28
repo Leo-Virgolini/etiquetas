@@ -3,7 +3,7 @@ package ar.com.leo.pedidos.service;
 import ar.com.leo.AppLogger;
 import ar.com.leo.api.nube.TiendaNubeApi;
 import ar.com.leo.api.nube.TiendaNubeApi.TiendaNubeOrderResult;
-import ar.com.leo.pedidos.api.PedidosMercadoLibreAPI;
+import ar.com.leo.api.ml.MercadoLibreAPI;
 import ar.com.leo.pedidos.excel.PedidosExcelWriter;
 import ar.com.leo.pedidos.model.*;
 
@@ -34,10 +34,10 @@ public class PedidosGenerator {
 
         // Paso 1: Inicializar APIs
         AppLogger.info("PEDIDOS - Paso 1: Inicializando APIs (MercadoLibre + Tienda Nube)...");
-        if (!PedidosMercadoLibreAPI.inicializar()) {
+        if (!MercadoLibreAPI.inicializar()) {
             throw new RuntimeException("No se pudieron inicializar los tokens de MercadoLibre.");
         }
-        final String userId = PedidosMercadoLibreAPI.getUserId();
+        final String userId = MercadoLibreAPI.getUserId();
 
         if (!TiendaNubeApi.inicializar()) {
             throw new RuntimeException("No se pudieron inicializar las credenciales de Tienda Nube.");
@@ -46,7 +46,7 @@ public class PedidosGenerator {
         // Paso 2-4: Obtener datos en paralelo
         var futureML = executor.submit(() -> {
             AppLogger.info("PEDIDOS - Paso 2: Obteniendo pedidos ML retiro...");
-            List<PedidoML> result = PedidosMercadoLibreAPI.obtenerPedidosRetiro(userId);
+            List<PedidoML> result = MercadoLibreAPI.obtenerPedidosRetiro(userId);
             AppLogger.info("PEDIDOS - ML retiro: " + result.size() + " items");
             return result;
         });

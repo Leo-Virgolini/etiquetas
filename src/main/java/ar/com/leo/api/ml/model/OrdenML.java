@@ -28,4 +28,15 @@ public class OrdenML {
     public String getShippingSubstatus() { return shippingSubstatus; }
     public void setShippingSubstatus(String shippingSubstatus) { this.shippingSubstatus = shippingSubstatus; }
     public List<Venta> getItems() { return items; }
+
+    public long getVentaId() {
+        return packId != null ? packId : orderId;
+    }
+
+    public String getNumeroVenta() {
+        String id = String.valueOf(getVentaId());
+        return id.length() > 5 ? id.substring(id.length() - 5) : id;
+    }
+
+    public OffsetDateTime getFechaCreacion() { return fecha; }
 }

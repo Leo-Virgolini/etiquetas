@@ -6,9 +6,10 @@ import ar.com.leo.api.ml.model.MLCredentials;
 import ar.com.leo.api.ml.model.OrdenML;
 import ar.com.leo.api.ml.model.TokensML;
 import ar.com.leo.api.ml.model.Venta;
-import ar.com.leo.model.ZplLabel;
-import ar.com.leo.parser.ZplParser;
-import static ar.com.leo.parser.ZplParser.normalizeSku;
+import ar.com.leo.pedidos.model.PedidoML;
+import ar.com.leo.etiquetas.model.ZplLabel;
+import ar.com.leo.etiquetas.parser.ZplParser;
+import static ar.com.leo.etiquetas.parser.ZplParser.normalizeSku;
 import javafx.application.Platform;
 import javafx.scene.control.TextInputDialog;
 import tools.jackson.databind.JsonNode;
@@ -1008,6 +1009,111 @@ public class MercadoLibreAPI {
                 AppLogger.info("DIAG - Shipment " + shippingId + ": error al consultar");
             }
         }
+    }
+
+    // -----------------------------------------------------------------------------------------------------------------
+    // PEDIDOS RETIRO (sin envío, para tab Pedidos)
+    // -----------------------------------------------------------------------------------------------------------------
+
+    public static List<PedidoML> obtenerPedidosRetiro(String userId) {
+        verificarTokens();
+
+        List<PedidoML> pedidos = new ArrayList<>();
+        Set<Long> orderIdsSeen = new HashSet<>();
+        int offset = 0;
+        final int limit = 50;
+        boolean hasMore = true;
+        int omitidas = 0;
+
+        while (hasMore) {
+            final int currentOffset = offset;
+            String fechaDesde = OffsetDateTime.now()
+                    .minusDays(7)
+                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:00:00.000XXX"));
+
+            String url = String.format(
+                    "https://api.mercadolibre.com/orders/search?seller=%s&tags=no_shipping&order.status=paid&order.date_created.from=%s&sort=date_asc&offset=%d&limit=%d",
+                    userId, URLEncoder.encode(fechaDesde, StandardCharsets.UTF_8), currentOffset, limit);
+
+            Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Authorization", "Bearer " + tokens.accessToken)
+                    .GET()
+                    .build();
+
+            HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
+
+            if (response == null || response.statusCode() != 200) {
+                String body = response != null ? response.body() : "sin respuesta";
+                AppLogger.warn("PEDIDOS ML - Error al obtener órdenes retiro (offset " + currentOffset + "): " + body);
+                break;
+            }
+
+            JsonNode root = mapper.readTree(response.body());
+            JsonNode results = root.path("results");
+
+            if (!results.isArray() || results.isEmpty()) break;
+
+            for (JsonNode order : results) {
+                long orderId = order.path("id").asLong();
+                if (!orderIdsSeen.add(orderId)) continue;
+
+                // Skip delivered
+                JsonNode tagsNode = order.path("tags");
+                if (tagsNode.isArray()) {
+                    boolean esEntregada = false;
+                    for (JsonNode tag : tagsNode) {
+                        if ("delivered".equals(tag.asString())) { esEntregada = true; break; }
+                    }
+                    if (esEntregada) continue;
+                }
+
+                // Skip fulfilled
+                if (order.path("fulfilled").asBoolean(false)) continue;
+
+                // Skip con nota
+                if (tieneNota(orderId)) {
+                    omitidas++;
+                    continue;
+                }
+
+                String dateCreated = order.path("date_created").asString("");
+                OffsetDateTime fecha = null;
+                if (!dateCreated.isBlank()) {
+                    try { fecha = OffsetDateTime.parse(dateCreated); } catch (Exception ignored) {}
+                }
+
+                // Buyer info
+                JsonNode buyer = order.path("buyer");
+                String usuario = buyer.path("nickname").asString("");
+                String firstName = buyer.path("first_name").asString("");
+                String lastName = buyer.path("last_name").asString("");
+                String nombreApellido = (firstName + " " + lastName).trim();
+
+                // Items
+                JsonNode orderItems = order.path("order_items");
+                if (!orderItems.isArray()) continue;
+
+                for (JsonNode orderItem : orderItems) {
+                    JsonNode item = orderItem.path("item");
+                    String sku = item.path("seller_sku").asString("");
+                    if (sku.isBlank()) sku = item.path("seller_custom_field").asString("");
+                    String detalle = item.path("title").asString("");
+                    double quantity = orderItem.path("quantity").asDouble(0);
+
+                    pedidos.add(new PedidoML(orderId, fecha, usuario, nombreApellido, sku, quantity, detalle));
+                }
+            }
+
+            JsonNode paging = root.path("paging");
+            int total = paging.path("total").asInt(0);
+            offset += limit;
+            hasMore = offset < total;
+            AppLogger.info(String.format("PEDIDOS ML - Obtenidas %d/%d órdenes retiro", Math.min(offset, total), total));
+        }
+
+        AppLogger.info("PEDIDOS ML - Pedidos retiro: " + pedidos.size() + " (omitidas con nota: " + omitidas + ")");
+        return pedidos;
     }
 
     // -----------------------------------------------------------------------------------------------------------------

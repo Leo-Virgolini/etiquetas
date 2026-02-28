@@ -2,9 +2,9 @@ package ar.com.leo.api.ml.model;
 
 public class Venta {
 
-    private final String sku;
-    private final double cantidad;
-    private final String origen;
+    private String sku;
+    private double cantidad;
+    private String origen;
     private final String titulo;
 
     public Venta(String sku, double cantidad, String origen) {
@@ -19,8 +19,11 @@ public class Venta {
     }
 
     public String getSku() { return sku; }
+    public void setSku(String sku) { this.sku = sku; }
     public double getCantidad() { return cantidad; }
+    public void setCantidad(double cantidad) { this.cantidad = cantidad; }
     public String getOrigen() { return origen; }
+    public void setOrigen(String origen) { this.origen = origen; }
     public String getTitulo() { return titulo; }
 
     @Override

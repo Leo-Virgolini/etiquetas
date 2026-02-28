@@ -6,7 +6,7 @@ import ar.com.leo.api.nube.model.NubeCredentials;
 import ar.com.leo.api.nube.model.NubeCredentials.StoreCredentials;
 import ar.com.leo.pedidos.model.EtiquetaTN;
 import ar.com.leo.pedidos.model.PedidoTN;
-import ar.com.leo.pickit.model.Venta;
+import ar.com.leo.api.ml.model.Venta;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
@@ -103,12 +103,12 @@ public class TiendaNubeApi {
             }
 
             for (JsonNode order : ordersArray) {
-                long orderId = order.path("id").asLong(0);
+                long orderNumber = order.path("number").asLong(0);
 
                 if (!tieneFulfillmentUnpacked(order)) continue;
 
                 if (esPickup(order) && tieneNota(order)) {
-                    AppLogger.info("NUBE (" + label + ") - Omitida orden pickup con nota: " + orderId);
+                    AppLogger.info("NUBE (" + label + ") - Omitida orden pickup con nota: " + orderNumber);
                     continue;
                 }
 
@@ -121,13 +121,13 @@ public class TiendaNubeApi {
                     String productName = product.path("name").asString("");
 
                     if (quantity <= 0) {
-                        AppLogger.warn("NUBE (" + label + ") - Producto con cantidad inválida en orden " + orderId + ": " + sku);
+                        AppLogger.warn("NUBE (" + label + ") - Producto con cantidad inválida en orden " + orderNumber + ": " + sku);
                         String errorSku = sku.isBlank() ? productName : sku;
                         ventas.add(new Venta("CANT INVALIDA: " + errorSku, quantity, label));
                         continue;
                     }
                     if (sku.isBlank()) {
-                        AppLogger.warn("NUBE (" + label + ") - Producto sin SKU en orden " + orderId + ": " + productName);
+                        AppLogger.warn("NUBE (" + label + ") - Producto sin SKU en orden " + orderNumber + ": " + productName);
                         ventas.add(new Venta("SIN SKU: " + productName, quantity, label));
                         continue;
                     }
@@ -332,18 +332,23 @@ public class TiendaNubeApi {
         return null;
     }
 
+    /**
+     * Detecta si la orden es de retiro en local (pickup) usando los fulfillments.
+     * <p>
+     * Órdenes nuevas: tienen array {@code fulfillments} con {@code shipping.type = "pickup"}.
+     * Órdenes viejas: no tienen fulfillments (array vacío/ausente) y usaban
+     * {@code shipping_pickup_type} a nivel de orden. Se descartan retornando false
+     * para evitar procesar órdenes antiguas sin datos de envío confiables.
+     */
     private static boolean esPickup(JsonNode order) {
         JsonNode fulfillments = order.path("fulfillments");
-        if (fulfillments.isArray() && !fulfillments.isEmpty()) {
-            for (JsonNode fo : fulfillments) {
-                if ("pickup".equalsIgnoreCase(fo.path("shipping").path("type").asString(""))) {
-                    return true;
-                }
+        if (!fulfillments.isArray() || fulfillments.isEmpty()) return false;
+        for (JsonNode fo : fulfillments) {
+            if ("pickup".equalsIgnoreCase(fo.path("shipping").path("type").asString(""))) {
+                return true;
             }
-            return false;
         }
-        // Fallback: fulfillments null/vacío, usar shipping_pickup_type de la orden
-        return "pickup".equalsIgnoreCase(order.path("shipping_pickup_type").asString(""));
+        return false;
     }
 
     private static boolean tieneNota(JsonNode order) {
@@ -351,18 +356,23 @@ public class TiendaNubeApi {
         return !nota.isEmpty();
     }
 
+    /**
+     * Verifica si una orden tiene al menos un fulfillment con status UNPACKED.
+     * <p>
+     * Órdenes nuevas: tienen array {@code fulfillments} con {@code status = "unpacked"}.
+     * Órdenes viejas: no tienen fulfillments (array vacío/ausente) y usaban
+     * {@code shipping_status} a nivel de orden. Se descartan retornando false
+     * para evitar procesar órdenes antiguas sin SKU ni datos confiables.
+     */
     private static boolean tieneFulfillmentUnpacked(JsonNode order) {
         JsonNode fulfillments = order.path("fulfillments");
-        if (fulfillments.isArray() && !fulfillments.isEmpty()) {
-            for (JsonNode fo : fulfillments) {
-                if ("unpacked".equalsIgnoreCase(fo.path("status").asString(""))) {
-                    return true;
-                }
+        if (!fulfillments.isArray() || fulfillments.isEmpty()) return false;
+        for (JsonNode fo : fulfillments) {
+            if ("unpacked".equalsIgnoreCase(fo.path("status").asString(""))) {
+                return true;
             }
-            return false;
         }
-        // Fallback: fulfillments null/vacío, usar shipping_status de la orden
-        return "unpacked".equalsIgnoreCase(order.path("shipping_status").asString(""));
+        return false;
     }
 
     private static StoreCredentials getStore(String storeName) {
@@ -372,54 +382,6 @@ public class TiendaNubeApi {
 
     private static HttpRetryHandler getRetryHandler(String storeName) {
         return retryHandlers.computeIfAbsent(storeName, k -> new HttpRetryHandler(httpClient, 10000L, 2));
-    }
-
-    // ── TEST: ver JSON crudo de una orden KT HOGAR por number ──
-    public static void main(String[] args) throws Exception {
-
-        String orderNumber = "6304";
-
-        if (!inicializar()) {
-            System.err.println("No se pudieron cargar las credenciales de Tienda Nube.");
-            return;
-        }
-
-        StoreCredentials store = getStore(STORE_HOGAR);
-        if (store == null) {
-            System.err.println("No se encontraron credenciales de KT HOGAR.");
-            return;
-        }
-
-        String url = String.format(
-                "https://api.tiendanube.com/v1/%s/orders?aggregates=fulfillment_orders&q=%s",
-                store.storeId, orderNumber);
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Authentication", "bearer " + store.accessToken)
-                .header("User-Agent", "Pickit")
-                .header("Content-Type", "application/json")
-                .GET()
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-        System.out.println("Status: " + response.statusCode());
-        System.out.println();
-
-        JsonNode json = mapper.readTree(response.body());
-        if (json.isArray() && !json.isEmpty()) {
-            JsonNode order = json.get(0);
-            System.out.println("Orden number: " + order.path("number"));
-            System.out.println("created_at: " + order.path("created_at"));
-            System.out.println();
-            String pretty = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(order);
-            System.out.println(pretty);
-        } else {
-            System.out.println("No se encontró la orden " + orderNumber);
-            String pretty = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(json);
-            System.out.println(pretty);
-        }
     }
 
     private static NubeCredentials cargarCredenciales() {

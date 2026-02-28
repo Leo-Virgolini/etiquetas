@@ -1,10 +1,12 @@
 package ar.com.leo.pickit.service;
 
 import ar.com.leo.AppLogger;
+import ar.com.leo.api.ml.MercadoLibreAPI;
+import ar.com.leo.api.ml.MercadoLibreAPI.MLOrderResult;
+import ar.com.leo.api.ml.MercadoLibreAPI.SlaInfo;
+import ar.com.leo.api.ml.model.OrdenML;
+import ar.com.leo.api.ml.model.Venta;
 import ar.com.leo.api.nube.TiendaNubeApi;
-import ar.com.leo.pickit.api.PickitMercadoLibreAPI;
-import ar.com.leo.pickit.api.PickitMercadoLibreAPI.MLOrderResult;
-import ar.com.leo.pickit.api.PickitMercadoLibreAPI.SlaInfo;
 import ar.com.leo.pickit.excel.ExcelManager;
 import ar.com.leo.pickit.excel.ExcelManager.ComboEntry;
 import ar.com.leo.pickit.excel.ExcelManager.ProductoStock;
@@ -42,10 +44,10 @@ public class PickitGenerator {
 
         // Paso 1: Inicializar APIs
         AppLogger.info("PICKIT - Paso 1: Inicializando APIs (MercadoLibre + Tienda Nube)...");
-        if (!PickitMercadoLibreAPI.inicializar()) {
+        if (!MercadoLibreAPI.inicializar()) {
             throw new RuntimeException("No se pudieron inicializar los tokens de MercadoLibre.");
         }
-        final String userId = PickitMercadoLibreAPI.getUserId();
+        final String userId = MercadoLibreAPI.getUserId();
 
         if (!TiendaNubeApi.inicializar()) {
             throw new RuntimeException("No se pudieron inicializar las credenciales de Tienda Nube.");
@@ -57,7 +59,7 @@ public class PickitGenerator {
         // Pasos 2-5: Obtener ventas en paralelo
         var futureMLPrint = executor.submit(() -> {
             AppLogger.info("PICKIT - Paso 2: Obteniendo ventas ML ready_to_print...");
-            MLOrderResult result = PickitMercadoLibreAPI.obtenerVentasReadyToPrint(userId);
+            MLOrderResult result = MercadoLibreAPI.obtenerVentasReadyToPrint(userId, false);
             todasLasVentas.addAll(result.ventas());
             todasLasOrdenesML.addAll(result.ordenes());
             return result.ventas().size();
@@ -65,7 +67,7 @@ public class PickitGenerator {
 
         var futureMLAgreement = executor.submit(() -> {
             AppLogger.info("PICKIT - Paso 3: Obteniendo ventas ML acuerdo con el vendedor...");
-            MLOrderResult result = PickitMercadoLibreAPI.obtenerVentasSellerAgreement(userId);
+            MLOrderResult result = MercadoLibreAPI.obtenerVentasSellerAgreement(userId);
             todasLasVentas.addAll(result.ventas());
             todasLasOrdenesML.addAll(result.ordenes());
             return result.ventas().size();
@@ -114,7 +116,7 @@ public class PickitGenerator {
         Map<Long, SlaInfo> slaMap = Collections.emptyMap();
         if (!shipmentIdsUnicos.isEmpty()) {
             AppLogger.info("PICKIT - Obteniendo SLAs para " + shipmentIdsUnicos.size() + " envíos...");
-            slaMap = PickitMercadoLibreAPI.obtenerSlasParalelo(new ArrayList<>(shipmentIdsUnicos));
+            slaMap = MercadoLibreAPI.obtenerSlasParalelo(new ArrayList<>(shipmentIdsUnicos));
             AppLogger.info("PICKIT - SLAs obtenidos: " + slaMap.size());
         }
 
