@@ -39,8 +39,6 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.scene.media.AudioClip;
 import javafx.scene.paint.Color;
-import javafx.scene.text.Font;
-import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 import javafx.stage.FileChooser;
 
@@ -677,23 +675,29 @@ public class MainController {
 
                 // Guardar automáticamente en carpeta "Etiquetas"
                 String saveError = null;
+                File savedFile = null;
                 try {
                     Path etiquetasDir = Path.of("Etiquetas");
                     Files.createDirectories(etiquetasDir);
                     String fechaHora = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"));
                     Path outputFile = etiquetasDir.resolve("etiquetas_ordenadas_" + fechaHora + ".txt");
                     fileSaver.save(interleaveForPrint(result.sortedFlatList()), outputFile);
+                    savedFile = outputFile.toFile();
                 } catch (Exception ex) {
                     AppLogger.error("Error al guardar automáticamente", ex);
                     saveError = ex.getMessage();
                 }
 
                 final String finalSaveError = saveError;
+                final File finalSavedFile = savedFile;
                 Platform.runLater(() -> {
                     setLoading(false);
                     currentResult = result;
                     showLabelTable();
                     displayResult(result);
+                    if (finalSavedFile != null) {
+                        LogHelper.addFileLink(statsBar, finalSavedFile);
+                    }
                     if (finalSaveError != null) {
                         AlertHelper.showError("Error al guardar", "No se pudo guardar el archivo automáticamente:\n" + finalSaveError);
                     }
@@ -1672,14 +1676,8 @@ public class MainController {
         ContextMenu logContextMenu = new ContextMenu();
         MenuItem copiarTodo = new MenuItem("Copiar todo");
         copiarTodo.setOnAction(e -> {
-            StringBuilder sb = new StringBuilder();
-            for (var node : pickitLogTextFlow.getChildren()) {
-                if (node instanceof Text t) {
-                    sb.append(t.getText());
-                }
-            }
             ClipboardContent content = new ClipboardContent();
-            content.putString(sb.toString());
+            content.putString(LogHelper.extractText(pickitLogTextFlow));
             Clipboard.getSystemClipboard().setContent(content);
         });
         logContextMenu.getItems().add(copiarTodo);
@@ -1710,11 +1708,7 @@ public class MainController {
     }
 
     private void pickitAppendLog(String message, Color color) {
-        Text text = new Text(message + "\n");
-        text.setFill(color);
-        text.setFont(Font.font("Segoe UI", 12));
-        pickitLogTextFlow.getChildren().add(text);
-        pickitLogScrollPane.setVvalue(1.0);
+        LogHelper.appendLog(pickitLogTextFlow, pickitLogScrollPane, message, color);
     }
 
     @FXML
@@ -1901,14 +1895,8 @@ public class MainController {
         ContextMenu logContextMenu = new ContextMenu();
         MenuItem copiarTodo = new MenuItem("Copiar todo");
         copiarTodo.setOnAction(e -> {
-            StringBuilder sb = new StringBuilder();
-            for (var node : pedidosLogTextFlow.getChildren()) {
-                if (node instanceof Text t) {
-                    sb.append(t.getText());
-                }
-            }
             ClipboardContent content = new ClipboardContent();
-            content.putString(sb.toString());
+            content.putString(LogHelper.extractText(pedidosLogTextFlow));
             Clipboard.getSystemClipboard().setContent(content);
         });
         logContextMenu.getItems().add(copiarTodo);
@@ -1916,11 +1904,7 @@ public class MainController {
     }
 
     private void pedidosAppendLog(String message, Color color) {
-        Text text = new Text(message + "\n");
-        text.setFill(color);
-        text.setFont(Font.font("Segoe UI", 12));
-        pedidosLogTextFlow.getChildren().add(text);
-        pedidosLogScrollPane.setVvalue(1.0);
+        LogHelper.appendLog(pedidosLogTextFlow, pedidosLogScrollPane, message, color);
     }
 
     @FXML

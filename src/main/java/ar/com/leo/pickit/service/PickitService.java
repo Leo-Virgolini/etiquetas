@@ -8,9 +8,9 @@ import javafx.concurrent.Service;
 import javafx.concurrent.Task;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.paint.Color;
-import javafx.scene.text.Font;
-import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
+
+import ar.com.leo.ui.LogHelper;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -71,20 +71,18 @@ public class PickitService extends Service<File> {
                         }
                         flushing.set(false);
                         for (String message : batch) {
-                            Text text = new Text(message + "\n");
-                            text.setFont(Font.font("Segoe UI", 12));
+                            Color color;
                             if (message.contains("[ERROR]")) {
-                                text.setFill(COLOR_ERROR);
+                                color = COLOR_ERROR;
                             } else if (message.contains("[WARN]")) {
-                                text.setFill(COLOR_WARN);
+                                color = COLOR_WARN;
                             } else if (message.contains("[OK]")) {
-                                text.setFill(COLOR_SUCCESS);
+                                color = COLOR_SUCCESS;
                             } else {
-                                text.setFill(COLOR_INFO);
+                                color = COLOR_INFO;
                             }
-                            logTextFlow.getChildren().add(text);
+                            LogHelper.appendLog(logTextFlow, logScrollPane, message, color);
                         }
-                        logScrollPane.setVvalue(1.0);
                         if (!pendingMessages.isEmpty()) {
                             scheduleFlush();
                         }
