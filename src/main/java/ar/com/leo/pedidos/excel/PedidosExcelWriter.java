@@ -373,7 +373,7 @@ public class PedidosExcelWriter {
 
             // Page break si no cabe en la página actual
             if (currentPageHeight > 0 && currentPageHeight + cardHeight > MAX_PAGE_HEIGHT) {
-                sheet.setRowBreak(currentRow - 1);
+                sheet.setRowBreak(currentRow);
                 currentPageHeight = 0;
             }
 
@@ -412,7 +412,7 @@ public class PedidosExcelWriter {
         for (int i = 0; i < items.size(); i++) {
             // Page break si no cabe otra tarjeta
             if (currentPageHeight > 0 && currentPageHeight + etiquetaHeight > MAX_PAGE_HEIGHT) {
-                sheet.setRowBreak(currentRow - 1);
+                sheet.setRowBreak(currentRow);
                 currentPageHeight = 0;
             }
 
