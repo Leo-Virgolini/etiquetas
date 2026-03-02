@@ -33,26 +33,24 @@ public class PedidosExcelWriter {
     private static final ZoneId ZONA_AR = ZoneId.of("America/Argentina/Buenos_Aires");
 
     private static final int CARD_COLS = 6;
-    private static final int RIGHT_START = 7;
 
     private static final int ETIQUETA_CARD_ROWS = 8;
     private static final int PEDIDO_MIN_PRODUCTS = 1;
 
     // Alturas para tarjetas de pedido (filas header fijas + productos dinámicos + padding)
-    private static final float[] PEDIDO_HEADER_HEIGHTS = {26, 26, 26, 20};
-    private static final float PEDIDO_PRODUCT_HEIGHT = 33f;
-    private static final float PEDIDO_PADDING_HEIGHT = 4f;
+    private static final float[] PEDIDO_HEADER_HEIGHTS = {52, 52, 52, 40};
+    private static final float PEDIDO_PRODUCT_HEIGHT = 66f;
+    private static final float PEDIDO_PADDING_HEIGHT = 8f;
 
-    private static final float[] ETIQUETA_ROW_HEIGHTS = {18, 32, 28, 24, 22, 22, 8, 8};
+    private static final float[] ETIQUETA_ROW_HEIGHTS = {36, 64, 56, 48, 44, 44, 16, 16};
 
     // Anchos de columna en 1/256 de carácter
-    private static final int COL_SKU_WIDTH = 10 * 256;
-    private static final int COL_CANT_WIDTH = 7 * 256;
-    private static final int COL_DETALLE_WIDTH = 12 * 256;
-    private static final int COL_GAP_WIDTH = (int) (1.5 * 256);
+    private static final int COL_SKU_WIDTH = 20 * 256;
+    private static final int COL_CANT_WIDTH = 14 * 256;
+    private static final int COL_DETALLE_WIDTH = 24 * 256;
 
-    // Altura máxima de página en puntos (A4 portrait - márgenes)
-    private static final float MAX_PAGE_HEIGHT = 810f;
+    // Altura máxima de página en puntos (A4 portrait, compensando escala fitToWidth ~82%)
+    private static final float MAX_PAGE_HEIGHT = 990f;
 
     // ── Records para agrupación ──
 
@@ -75,6 +73,7 @@ public class PedidosExcelWriter {
         final XSSFCellStyle productNormal;
         final XSSFCellStyle productHighlight;
         final XSSFCellStyle productWrap;
+        final XSSFCellStyle productHighlightWrap;
         final XSSFCellStyle empty;
         final XSSFCellStyle smallLabel;
         final XSSFCellStyle smallLabelRight;
@@ -85,34 +84,34 @@ public class PedidosExcelWriter {
         final XSSFCellStyle observaciones;
 
         CardStyles(XSSFWorkbook wb, XSSFColor accentColor) {
-            // N° venta grande (18pt bold)
+            // N° venta grande (32pt bold)
             bigNumber = wb.createCellStyle();
-            bigNumber.setFont(createXFont(wb, 18, true, false));
+            bigNumber.setFont(createXFont(wb, 32, true, false));
             bigNumber.setAlignment(HorizontalAlignment.CENTER);
             bigNumber.setVerticalAlignment(VerticalAlignment.CENTER);
             setBordersOn(bigNumber, BorderStyle.THIN);
 
-            // Fecha (11pt, fondo gris claro)
+            // Fecha (20pt, fondo gris claro)
             fecha = wb.createCellStyle();
-            fecha.setFont(createXFont(wb, 11, false, false));
+            fecha.setFont(createXFont(wb, 20, false, false));
             fecha.setAlignment(HorizontalAlignment.CENTER);
             fecha.setVerticalAlignment(VerticalAlignment.CENTER);
             fecha.setFillForegroundColor(xcolor(230, 230, 230));
             fecha.setFillPattern(FillPatternType.SOLID_FOREGROUND);
             setBordersOn(fecha, BorderStyle.THIN);
 
-            // Nombre (14pt bold, shrink to fit)
+            // Nombre (24pt bold, shrink to fit)
             nombre = wb.createCellStyle();
-            nombre.setFont(createXFont(wb, 14, true, false));
+            nombre.setFont(createXFont(wb, 24, true, false));
             nombre.setAlignment(HorizontalAlignment.LEFT);
             nombre.setVerticalAlignment(VerticalAlignment.CENTER);
             nombre.setIndention((short) 1);
             nombre.setShrinkToFit(true);
             setBordersOn(nombre, BorderStyle.THIN);
 
-            // Tienda badge (12pt bold, fondo oscuro, texto blanco)
+            // Tienda badge (22pt bold, fondo oscuro, texto blanco)
             tiendaBadge = wb.createCellStyle();
-            XSSFFont fontTienda = createXFont(wb, 12, true, false);
+            XSSFFont fontTienda = createXFont(wb, 22, true, false);
             fontTienda.setColor(xcolor(255, 255, 255));
             tiendaBadge.setFont(fontTienda);
             tiendaBadge.setAlignment(HorizontalAlignment.CENTER);
@@ -122,45 +121,49 @@ public class PedidosExcelWriter {
             tiendaBadge.setWrapText(true);
             setBordersOn(tiendaBadge, BorderStyle.THIN);
 
-            // Headers de producto (10pt bold, fondo accent)
+            // Headers de producto (18pt bold, fondo accent)
             productHeader = wb.createCellStyle();
-            productHeader.setFont(createXFont(wb, 10, true, false));
+            productHeader.setFont(createXFont(wb, 18, true, false));
             productHeader.setAlignment(HorizontalAlignment.CENTER);
             productHeader.setVerticalAlignment(VerticalAlignment.CENTER);
             productHeader.setFillForegroundColor(accentColor);
             productHeader.setFillPattern(FillPatternType.SOLID_FOREGROUND);
             setBordersOn(productHeader, BorderStyle.THIN);
 
-            // Producto normal (11pt)
+            // Producto normal (20pt)
             productNormal = wb.createCellStyle();
-            productNormal.setFont(createXFont(wb, 11, false, false));
+            productNormal.setFont(createXFont(wb, 20, false, false));
             productNormal.setAlignment(HorizontalAlignment.CENTER);
             productNormal.setVerticalAlignment(VerticalAlignment.CENTER);
             setBordersOn(productNormal, BorderStyle.THIN);
 
-            // Producto highlight (11pt bold, fondo negro con texto blanco para cantidad > 1)
+            // Producto highlight (20pt bold + subrayado para cantidad > 1)
             productHighlight = wb.createCellStyle();
-            productHighlight.setFont(createXFont(wb, 11, true, false, xcolor(255, 255, 255)));
+            XSSFFont fontHighlight = createXFont(wb, 20, true, false);
+            fontHighlight.setUnderline(FontUnderline.SINGLE);
+            productHighlight.setFont(fontHighlight);
             productHighlight.setAlignment(HorizontalAlignment.CENTER);
             productHighlight.setVerticalAlignment(VerticalAlignment.CENTER);
-            productHighlight.setFillForegroundColor(xcolor(0, 0, 0));
-            productHighlight.setFillPattern(FillPatternType.SOLID_FOREGROUND);
             setBordersOn(productHighlight, BorderStyle.THIN);
 
-            // Producto wrap (11pt, wrap text, alineado izq)
+            // Producto wrap (11pt, wrap text, centrado)
             productWrap = wb.createCellStyle();
             productWrap.cloneStyleFrom(productNormal);
             productWrap.setWrapText(true);
-            productWrap.setAlignment(HorizontalAlignment.LEFT);
+
+            // Producto highlight + wrap (bold + subrayado + wrap)
+            productHighlightWrap = wb.createCellStyle();
+            productHighlightWrap.cloneStyleFrom(productHighlight);
+            productHighlightWrap.setWrapText(true);
 
             // Vacío
             empty = wb.createCellStyle();
 
             // ── Estilos para etiquetas ──
 
-            // Label chico (9pt gris)
+            // Label chico (16pt gris)
             smallLabel = wb.createCellStyle();
-            XSSFFont fontSmall = createXFont(wb, 9, false, false);
+            XSSFFont fontSmall = createXFont(wb, 16, false, false);
             fontSmall.setColor(xcolor(128, 128, 128));
             smallLabel.setFont(fontSmall);
             smallLabel.setAlignment(HorizontalAlignment.LEFT);
@@ -173,34 +176,34 @@ public class PedidosExcelWriter {
             smallLabelRight.setAlignment(HorizontalAlignment.RIGHT);
             smallLabelRight.setIndention((short) 1);
 
-            // Nombre grande (16pt bold centrado)
+            // Nombre grande (28pt bold centrado)
             bigNombre = wb.createCellStyle();
-            bigNombre.setFont(createXFont(wb, 16, true, false));
+            bigNombre.setFont(createXFont(wb, 28, true, false));
             bigNombre.setAlignment(HorizontalAlignment.CENTER);
             bigNombre.setVerticalAlignment(VerticalAlignment.CENTER);
 
-            // Domicilio (13pt bold)
+            // Domicilio (24pt bold)
             domicilio = wb.createCellStyle();
-            domicilio.setFont(createXFont(wb, 13, true, false));
+            domicilio.setFont(createXFont(wb, 24, true, false));
             domicilio.setAlignment(HorizontalAlignment.CENTER);
             domicilio.setVerticalAlignment(VerticalAlignment.CENTER);
             domicilio.setWrapText(true);
 
-            // Localidad (13pt)
+            // Localidad (24pt)
             localidad = wb.createCellStyle();
-            localidad.setFont(createXFont(wb, 13, false, false));
+            localidad.setFont(createXFont(wb, 24, false, false));
             localidad.setAlignment(HorizontalAlignment.CENTER);
             localidad.setVerticalAlignment(VerticalAlignment.CENTER);
 
-            // CP/Teléfono (12pt bold)
+            // CP/Teléfono (22pt bold)
             cpTelefono = wb.createCellStyle();
-            cpTelefono.setFont(createXFont(wb, 12, true, false));
+            cpTelefono.setFont(createXFont(wb, 22, true, false));
             cpTelefono.setAlignment(HorizontalAlignment.CENTER);
             cpTelefono.setVerticalAlignment(VerticalAlignment.CENTER);
 
-            // Observaciones (10pt italic)
+            // Observaciones (18pt italic)
             observaciones = wb.createCellStyle();
-            observaciones.setFont(createXFont(wb, 10, false, true));
+            observaciones.setFont(createXFont(wb, 18, false, true));
             observaciones.setAlignment(HorizontalAlignment.LEFT);
             observaciones.setVerticalAlignment(VerticalAlignment.CENTER);
             observaciones.setWrapText(true);
@@ -348,7 +351,7 @@ public class PedidosExcelWriter {
 
     /**
      * Coloca tarjetas de pedido con altura dinámica según la cantidad de productos.
-     * Los pares de tarjetas (izq/der) comparten la misma altura = max de ambas.
+     * Una tarjeta por fila, ocupa el ancho completo de la hoja.
      * Page breaks inteligentes basados en altura acumulada.
      */
     private static <T> void colocarTarjetasPedidos(List<T> items, Sheet sheet,
@@ -357,22 +360,19 @@ public class PedidosExcelWriter {
         int currentRow = 0;
         float currentPageHeight = 0;
 
-        for (int i = 0; i < items.size(); i += 2) {
-            T left = items.get(i);
-            T right = (i + 1 < items.size()) ? items.get(i + 1) : null;
+        for (int i = 0; i < items.size(); i++) {
+            T item = items.get(i);
 
-            int maxProducts = productCountFn.applyAsInt(left);
-            if (right != null) maxProducts = Math.max(maxProducts, productCountFn.applyAsInt(right));
-            int slots = Math.max(maxProducts, PEDIDO_MIN_PRODUCTS);
+            int slots = Math.max(productCountFn.applyAsInt(item), PEDIDO_MIN_PRODUCTS);
             int cardRows = PEDIDO_HEADER_HEIGHTS.length + slots + 1;
 
-            // Calcular altura del par
-            float pairHeight = PEDIDO_PADDING_HEIGHT;
-            for (float h : PEDIDO_HEADER_HEIGHTS) pairHeight += h;
-            pairHeight += slots * PEDIDO_PRODUCT_HEIGHT;
+            // Calcular altura de la tarjeta
+            float cardHeight = PEDIDO_PADDING_HEIGHT;
+            for (float h : PEDIDO_HEADER_HEIGHTS) cardHeight += h;
+            cardHeight += slots * PEDIDO_PRODUCT_HEIGHT;
 
             // Page break si no cabe en la página actual
-            if (currentPageHeight > 0 && currentPageHeight + pairHeight > MAX_PAGE_HEIGHT) {
+            if (currentPageHeight > 0 && currentPageHeight + cardHeight > MAX_PAGE_HEIGHT) {
                 sheet.setRowBreak(currentRow - 1);
                 currentPageHeight = 0;
             }
@@ -388,19 +388,17 @@ public class PedidosExcelWriter {
                     row.setHeightInPoints(PEDIDO_PADDING_HEIGHT);
             }
 
-            // Renderizar tarjetas
-            renderer.render(sheet, currentRow, 0, left, slots);
-            if (right != null) {
-                renderer.render(sheet, currentRow, RIGHT_START, right, slots);
-            }
+            // Renderizar tarjeta
+            renderer.render(sheet, currentRow, 0, item, slots);
 
             currentRow += cardRows;
-            currentPageHeight += pairHeight;
+            currentPageHeight += cardHeight;
         }
     }
 
     /**
      * Coloca tarjetas de etiqueta con altura fija.
+     * Una tarjeta por fila, ocupa el ancho completo de la hoja.
      * Page breaks inteligentes basados en altura acumulada.
      */
     private static <T> void colocarTarjetasEtiquetas(List<T> items, Sheet sheet,
@@ -411,8 +409,8 @@ public class PedidosExcelWriter {
         int currentRow = 0;
         float currentPageHeight = 0;
 
-        for (int i = 0; i < items.size(); i += 2) {
-            // Page break si no cabe otro par
+        for (int i = 0; i < items.size(); i++) {
+            // Page break si no cabe otra tarjeta
             if (currentPageHeight > 0 && currentPageHeight + etiquetaHeight > MAX_PAGE_HEIGHT) {
                 sheet.setRowBreak(currentRow - 1);
                 currentPageHeight = 0;
@@ -424,13 +422,8 @@ public class PedidosExcelWriter {
                 row.setHeightInPoints(ETIQUETA_ROW_HEIGHTS[r]);
             }
 
-            // Renderizar izquierda
+            // Renderizar tarjeta
             renderer.render(sheet, currentRow, 0, items.get(i));
-
-            // Renderizar derecha si hay
-            if (i + 1 < items.size()) {
-                renderer.render(sheet, currentRow, RIGHT_START, items.get(i + 1));
-            }
 
             currentRow += ETIQUETA_CARD_ROWS;
             currentPageHeight += etiquetaHeight;
@@ -443,10 +436,14 @@ public class PedidosExcelWriter {
                                             PedidoMLGroup group, CardStyles styles, int productSlots) {
         int endCol = startCol + CARD_COLS - 1;
 
-        // Filas 0-1: N° VENTA (2×3) + FECHA (2×3) — sin celdas vacías
-        mergeAndSet(sheet, startRow, startRow + 1, startCol, startCol + 2,
-                String.valueOf(group.orderId()), styles.bigNumber);
-        mergeAndSet(sheet, startRow, startRow + 1, startCol + 3, endCol,
+        // Filas 0-1: N° VENTA (2×2) + BADGE ML RETIRO (2×2) + FECHA (2×2)
+        String ventaId = String.valueOf(group.orderId());
+        if (ventaId.length() > 5) ventaId = ventaId.substring(ventaId.length() - 5);
+        mergeAndSet(sheet, startRow, startRow + 1, startCol, startCol + 1,
+                ventaId, styles.bigNumber);
+        mergeAndSet(sheet, startRow, startRow + 1, startCol + 2, startCol + 3,
+                "ML\n(Retiro)", styles.tiendaBadge);
+        mergeAndSet(sheet, startRow, startRow + 1, startCol + 4, endCol,
                 formatFecha(group.fecha()), styles.fecha);
 
         // Fila 2: Nombre (usuario)
@@ -563,9 +560,9 @@ public class PedidosExcelWriter {
             if (i < productos.size()) {
                 ProductLine p = productos.get(i);
                 boolean hl = p.cantidad() > 1;
-                CellStyle skuStyle = styles.productNormal;
+                CellStyle skuStyle = hl ? styles.productHighlight : styles.productNormal;
                 CellStyle cantStyle = hl ? styles.productHighlight : styles.productNormal;
-                CellStyle detStyle = styles.productWrap;
+                CellStyle detStyle = hl ? styles.productHighlightWrap : styles.productWrap;
 
                 mergeAndSet(sheet, row, row, startCol, startCol + 1, p.sku(), skuStyle);
                 setCantidadCell(sheet, row, startCol + 2, p.cantidad(), cantStyle);
@@ -587,13 +584,6 @@ public class PedidosExcelWriter {
         sheet.setColumnWidth(3, COL_DETALLE_WIDTH);
         sheet.setColumnWidth(4, COL_DETALLE_WIDTH);
         sheet.setColumnWidth(5, COL_DETALLE_WIDTH);
-        sheet.setColumnWidth(6, COL_GAP_WIDTH);
-        sheet.setColumnWidth(7, COL_SKU_WIDTH);
-        sheet.setColumnWidth(8, COL_SKU_WIDTH);
-        sheet.setColumnWidth(9, COL_CANT_WIDTH);
-        sheet.setColumnWidth(10, COL_DETALLE_WIDTH);
-        sheet.setColumnWidth(11, COL_DETALLE_WIDTH);
-        sheet.setColumnWidth(12, COL_DETALLE_WIDTH);
     }
 
     private static void configurarImpresion(Sheet sheet) {

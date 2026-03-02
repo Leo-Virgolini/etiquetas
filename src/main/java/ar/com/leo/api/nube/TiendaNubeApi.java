@@ -2,11 +2,11 @@ package ar.com.leo.api.nube;
 
 import ar.com.leo.AppLogger;
 import ar.com.leo.api.HttpRetryHandler;
+import ar.com.leo.api.ml.model.Venta;
 import ar.com.leo.api.nube.model.NubeCredentials;
 import ar.com.leo.api.nube.model.NubeCredentials.StoreCredentials;
 import ar.com.leo.pedidos.model.EtiquetaTN;
 import ar.com.leo.pedidos.model.PedidoTN;
-import ar.com.leo.api.ml.model.Venta;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
@@ -28,8 +28,11 @@ import static ar.com.leo.api.HttpRetryHandler.BASE_SECRET_DIR;
 
 public class TiendaNubeApi {
 
-    public record TiendaNubeOrderResult(List<PedidoTN> pedidos, List<EtiquetaTN> etiquetas, int totalOrdenes) {}
-    public record VentasResult(List<Venta> ventas, int totalOrdenes) {}
+    public record TiendaNubeOrderResult(List<PedidoTN> pedidos, List<EtiquetaTN> etiquetas, int totalOrdenes) {
+    }
+
+    public record VentasResult(List<Venta> ventas, int totalOrdenes) {
+    }
 
     private static final ObjectMapper mapper = JsonMapper.shared();
     private static final HttpClient httpClient = HttpClient.newHttpClient();
@@ -222,14 +225,21 @@ public class TiendaNubeApi {
                 // Detectar método de envío (priorizar nombre real de la API)
                 String shippingName = obtenerNombreEnvio(order);
                 String tipoEnvio;
+                String snUpper = shippingName != null ? shippingName.toUpperCase() : "";
                 if (shippingName != null && shippingName.equalsIgnoreCase("Local del Vendedor")) {
                     tipoEnvio = "RETIRO";
-                } else if (esPickup(order)) {
+                } else if (esPickup(order) && !snUpper.contains("CORREO") && !snUpper.contains("ENVÍO NUBE") && !snUpper.contains("ENVIO NUBE")) {
                     tipoEnvio = "RETIRO";
-                } else if (shippingName != null && shippingName.toUpperCase().contains("LLEGA HOY")) {
-                    // Quitar detalle entre paréntesis: "CABA - LLEGA HOY  (Lunes a Viernes...)" -> "CABA - LLEGA HOY"
+                } else if (snUpper.contains("LLEGA HOY")) {
+                    // Quitar detalle entre paréntesis y normalizar a "LLEGA HOY - ZONA"
                     int parenIdx = shippingName.indexOf('(');
-                    tipoEnvio = parenIdx > 0 ? shippingName.substring(0, parenIdx).trim() : shippingName.trim();
+                    String clean = (parenIdx > 0 ? shippingName.substring(0, parenIdx).trim() : shippingName.trim()).toUpperCase();
+                    // "CABA - LLEGA HOY" → "LLEGA HOY - CABA"
+                    if (clean.contains(" - ") && !clean.startsWith("LLEGA HOY")) {
+                        String[] parts = clean.split("\\s*-\\s*", 2);
+                        clean = parts[1] + " - " + parts[0];
+                    }
+                    tipoEnvio = clean;
                 } else {
                     tipoEnvio = "CORREO";
                 }
@@ -408,6 +418,132 @@ public class TiendaNubeApi {
 
     private static HttpRetryHandler getRetryHandler(String storeName) {
         return retryHandlers.computeIfAbsent(storeName, k -> new HttpRetryHandler(httpClient, 10000L, 2));
+    }
+
+    // ── Test: consultar una orden por número y mostrar datos de envío ──
+    // Uso: main("12345") o main("12345", "67890")
+    public static void main(String[] args) throws Exception {
+        if (!inicializar()) {
+            System.out.println("No se pudieron cargar las credenciales de Tienda Nube.");
+            return;
+        }
+
+        List<String> ordenes = new ArrayList<>();
+        ordenes.add("9504");  // envio nube
+        ordenes.add("9499"); // caba llega hoy
+        ordenes.add("9498"); // local del vendedor
+        ordenes.add("9493"); // amba llega hoy
+        ordenes.add("9490"); // zippin
+
+        for (String o : ordenes) {
+            String orderNum = o.trim();
+            System.out.println("\n══════════════════════════════════════");
+            System.out.println("  Buscando orden #" + orderNum);
+            System.out.println("══════════════════════════════════════");
+
+            boolean found = false;
+            for (String storeName : List.of(STORE_HOGAR, STORE_GASTRO)) {
+                StoreCredentials store = getStore(storeName);
+                if (store == null) continue;
+
+                String url = String.format(
+                        "https://api.tiendanube.com/v1/%s/orders?q=%s&per_page=5",
+                        store.storeId, orderNum);
+
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(url))
+                        .header("Authentication", "bearer " + store.accessToken)
+                        .header("User-Agent", "Pickit")
+                        .header("Content-Type", "application/json")
+                        .GET()
+                        .build();
+
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() != 200) continue;
+
+                JsonNode ordersArray = mapper.readTree(response.body());
+                if (!ordersArray.isArray()) continue;
+
+                for (JsonNode order : ordersArray) {
+                    long number = order.path("number").asLong(0);
+                    if (!String.valueOf(number).equals(orderNum)) continue;
+
+                    found = true;
+                    System.out.println("  Store: " + storeName);
+
+                    boolean pickup = esPickup(order);
+                    String shippingName = obtenerNombreEnvio(order);
+                    String nota = order.path("owner_note").asString("").trim();
+                    String shippingStatus = order.path("shipping_status").asString("");
+
+                    // Clasificación
+                    String tipoEnvio;
+                    String snUpper = shippingName != null ? shippingName.toUpperCase() : "";
+                    if (shippingName != null && shippingName.equalsIgnoreCase("Local del Vendedor")) {
+                        tipoEnvio = "RETIRO";
+                    } else if (pickup && !snUpper.contains("CORREO") && !snUpper.contains("ENVÍO NUBE") && !snUpper.contains("ENVIO NUBE")) {
+                        tipoEnvio = "RETIRO";
+                    } else if (snUpper.contains("LLEGA HOY")) {
+                        int parenIdx = shippingName.indexOf('(');
+                        String clean = (parenIdx > 0 ? shippingName.substring(0, parenIdx).trim() : shippingName.trim()).toUpperCase();
+                        if (clean.contains(" - ") && !clean.startsWith("LLEGA HOY")) {
+                            String[] parts = clean.split("\\s*-\\s*", 2);
+                            clean = parts[1] + " - " + parts[0];
+                        }
+                        tipoEnvio = clean;
+                    } else {
+                        tipoEnvio = "CORREO";
+                    }
+
+                    System.out.println("  shipping_status: " + shippingStatus);
+                    System.out.println("  shippingName   : " + shippingName);
+                    System.out.println("  esPickup       : " + pickup);
+                    System.out.println("  nota           : " + (nota.isEmpty() ? "(vacía)" : nota));
+                    System.out.println("  → tipoEnvio    : " + tipoEnvio);
+
+                    // Fulfillments completos
+                    JsonNode fulfillments = order.path("fulfillments");
+                    if (fulfillments.isArray()) {
+                        for (int i = 0; i < fulfillments.size(); i++) {
+                            JsonNode fo = fulfillments.get(i);
+                            JsonNode shipping = fo.path("shipping");
+                            System.out.println("  fulfillment[" + i + "]:");
+                            System.out.println("    status       : " + fo.path("status").asString(""));
+                            System.out.println("    shipping.type: " + shipping.path("type").asString(""));
+                            System.out.println("    carrier.name : " + shipping.path("carrier").path("name").asString(""));
+                            System.out.println("    option.name  : " + shipping.path("option").path("name").asString(""));
+                            System.out.println("    option.code  : " + shipping.path("option").path("code").asString(""));
+                        }
+                    }
+
+                    // shipping_option a nivel de orden (fallback)
+                    JsonNode shippingOption = order.path("shipping_option");
+                    if (!shippingOption.isMissingNode() && !shippingOption.isNull()) {
+                        System.out.println("  shipping_option (orden):");
+                        if (shippingOption.isString()) {
+                            System.out.println("    value: " + shippingOption.asString(""));
+                        } else {
+                            System.out.println("    name : " + shippingOption.path("name").asString(""));
+                            System.out.println("    code : " + shippingOption.path("code").asString(""));
+                        }
+                    }
+
+                    // Productos
+                    JsonNode products = order.path("products");
+                    if (products.isArray()) {
+                        System.out.println("  productos:");
+                        for (JsonNode p : products) {
+                            System.out.printf("    - %s (SKU: %s) x%.0f%n",
+                                    p.path("name").asString(""), p.path("sku").asString(""), p.path("quantity").asDouble(0));
+                        }
+                    }
+                }
+            }
+
+            if (!found) {
+                System.out.println("  Orden no encontrada en ninguna tienda.");
+            }
+        }
     }
 
     private static NubeCredentials cargarCredenciales() {
