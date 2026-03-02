@@ -23,10 +23,12 @@ public class PedidosService extends Service<File> {
     private static final Color COLOR_WARN = Color.web("#E65100");
     private static final Color COLOR_ERROR = Color.FIREBRICK;
 
+    private final File stockExcel;
     private final TextFlow logTextFlow;
     private final ScrollPane logScrollPane;
 
-    public PedidosService(TextFlow logTextFlow, ScrollPane logScrollPane) {
+    public PedidosService(File stockExcel, TextFlow logTextFlow, ScrollPane logScrollPane) {
+        this.stockExcel = stockExcel;
         this.logTextFlow = logTextFlow;
         this.logScrollPane = logScrollPane;
     }
@@ -45,7 +47,7 @@ public class PedidosService extends Service<File> {
                 });
 
                 try {
-                    return PedidosGenerator.generarPedidos();
+                    return PedidosGenerator.generarPedidos(stockExcel);
                 } finally {
                     AppLogger.setUiLogger(null);
                 }

@@ -6,10 +6,13 @@ import ar.com.leo.api.nube.TiendaNubeApi.TiendaNubeOrderResult;
 import ar.com.leo.api.ml.MercadoLibreAPI;
 import ar.com.leo.pedidos.excel.PedidosExcelWriter;
 import ar.com.leo.pedidos.model.*;
+import ar.com.leo.pickit.excel.ExcelManager;
+import ar.com.leo.pickit.excel.ExcelManager.ProductoStock;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -30,7 +33,7 @@ public class PedidosGenerator {
         }
     }
 
-    public static File generarPedidos() throws Exception {
+    public static File generarPedidos(File stockExcel) throws Exception {
 
         // Paso 1: Inicializar APIs
         AppLogger.info("PEDIDOS - Paso 1: Inicializando APIs (MercadoLibre + Tienda Nube)...");
@@ -88,8 +91,34 @@ public class PedidosGenerator {
             return null;
         }
 
-        // Paso 6: Generar Excel
-        AppLogger.info("PEDIDOS - Paso 6: Generando Excel...");
+        // Paso 6: Reemplazar nombres de productos con los del Excel de stock
+        if (stockExcel != null && stockExcel.isFile()) {
+            AppLogger.info("PEDIDOS - Paso 6: Leyendo nombres de productos de Stock.xlsx...");
+            Map<String, ProductoStock> productosStock = ExcelManager.obtenerProductosStock(stockExcel);
+
+            pedidosML = pedidosML.stream().map(p -> {
+                ProductoStock ps = productosStock.get(p.sku());
+                if (ps != null && !ps.producto().isBlank()) {
+                    return new PedidoML(p.orderId(), p.fecha(), p.usuario(),
+                            p.nombreApellido(), p.sku(), p.cantidad(), ps.producto(), p.buyerId());
+                }
+                return p;
+            }).toList();
+
+            pedidosTN = pedidosTN.stream().map(p -> {
+                ProductoStock ps = productosStock.get(p.sku());
+                if (ps != null && !ps.producto().isBlank()) {
+                    return new PedidoTN(p.orderId(), p.fecha(), p.nombreApellido(),
+                            p.sku(), p.cantidad(), ps.producto(), p.tienda(), p.tipoEnvio());
+                }
+                return p;
+            }).toList();
+
+            AppLogger.info("PEDIDOS - Nombres de productos actualizados desde Stock.xlsx");
+        }
+
+        // Paso 7: Generar Excel
+        AppLogger.info("PEDIDOS - Paso 7: Generando Excel...");
         PedidosResult result = new PedidosResult(pedidosML, pedidosTN, etiquetasTN);
         File archivo = PedidosExcelWriter.generar(result);
 

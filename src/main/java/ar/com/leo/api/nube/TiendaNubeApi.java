@@ -219,9 +219,21 @@ public class TiendaNubeApi {
                 OffsetDateTime fecha = parseFechaISO(order.path("created_at").asString(""));
                 String ownerNote = order.path("owner_note").asString("").trim();
 
-                // Detectar método de envío
+                // Detectar método de envío (priorizar nombre real de la API)
                 String shippingName = obtenerNombreEnvio(order);
-                String tipoEnvio = esPickup(order) ? "RETIRO" : (shippingName != null ? limpiarNombreEnvio(shippingName) : "ENVÍO");
+                String tipoEnvio;
+                if (shippingName != null && shippingName.equalsIgnoreCase("Local del Vendedor")) {
+                    tipoEnvio = "RETIRO";
+                } else if (esPickup(order)) {
+                    tipoEnvio = "RETIRO";
+                } else if (shippingName != null && shippingName.toUpperCase().contains("LLEGA HOY")) {
+                    // Quitar detalle entre paréntesis: "CABA - LLEGA HOY  (Lunes a Viernes...)" -> "CABA - LLEGA HOY"
+                    int parenIdx = shippingName.indexOf('(');
+                    tipoEnvio = parenIdx > 0 ? shippingName.substring(0, parenIdx).trim() : shippingName.trim();
+                } else {
+                    tipoEnvio = "CORREO";
+                }
+                AppLogger.info("PEDIDOS NUBE (" + label + ") - Orden #" + orderNumber + " | Envío: " + tipoEnvio);
 
                 totalOrdenes++;
 
@@ -273,7 +285,23 @@ public class TiendaNubeApi {
     }
 
     private static String obtenerNombreEnvio(JsonNode order) {
-        // shipping_option puede ser un string o un objeto con "name"
+        // Priorizar fulfillments: carrier.name + option.name
+        JsonNode fulfillments = order.path("fulfillments");
+        if (fulfillments.isArray()) {
+            for (JsonNode fo : fulfillments) {
+                JsonNode shipping = fo.path("shipping");
+                String optionName = shipping.path("option").path("name").asString("");
+                if (optionName.isBlank()) continue;
+
+                String carrierName = shipping.path("carrier").path("name").asString("");
+                if (!carrierName.isBlank() && !optionName.toLowerCase().contains(carrierName.toLowerCase())) {
+                    return carrierName + " - " + optionName;
+                }
+                return optionName;
+            }
+        }
+
+        // Fallback: shipping_option a nivel de orden (puede ser string u objeto con "name")
         JsonNode shippingOption = order.path("shipping_option");
         if (!shippingOption.isMissingNode() && !shippingOption.isNull()) {
             if (shippingOption.isString()) {
@@ -285,25 +313,7 @@ public class TiendaNubeApi {
             }
         }
 
-        // Buscar en fulfillments: shipping.option.name
-        JsonNode fulfillments = order.path("fulfillments");
-        if (fulfillments.isArray()) {
-            for (JsonNode fo : fulfillments) {
-                String name = fo.path("shipping").path("option").path("name").asString("");
-                if (!name.isBlank()) return name;
-            }
-        }
-
         return null;
-    }
-
-    private static String limpiarNombreEnvio(String name) {
-        // Quitar detalle entre paréntesis: "CABA - LLEGA HOY  (Lunes a Viernes...)" -> "CABA - LLEGA HOY"
-        int parenIdx = name.indexOf('(');
-        if (parenIdx > 0) {
-            name = name.substring(0, parenIdx).trim();
-        }
-        return name;
     }
 
     private static String buildDomicilio(JsonNode shippingAddress) {

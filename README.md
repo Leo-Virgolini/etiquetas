@@ -4,7 +4,7 @@ Aplicacion de escritorio JavaFX para gestionar despachos de e-commerce: generaci
 
 ## Configuracion global
 
-Dos selectores de archivo persistentes (guardados en `Preferences`) disponibles en todas las pestanas:
+Dos selectores de archivo persistentes (guardados en `Preferences`) disponibles en todas las pestañas:
 
 - **Excel de stock** (`Stock.xlsx`): mapea SKU a zona de almacen (J1, J2, T1, T2, etc.) y opcionalmente codigo externo. Lee desde fila 3 las columnas "Codigo Producto", "Unidad" y "Codigo Externo".
 - **Excel de combos**: define productos compuestos y sus componentes. Columnas: "Codigo Compuesto", "Codigo Componente", "Cantidad".
@@ -31,7 +31,7 @@ Genera un Excel de picking para el deposito con todos los pedidos pendientes de 
 
 ### Etiquetas ML
 
-Dos sub-pestanas para obtener etiquetas ZPL, procesarlas y enviarlas a la impresora Zebra.
+Dos sub-pestañas para obtener etiquetas ZPL, procesarlas y enviarlas a la impresora Zebra.
 
 #### API MercadoLibre
 

@@ -38,76 +38,111 @@ public class PickitGenerator {
         }
     }
 
-    public static File generarPickit(File stockExcel, File combosExcel, List<ProductoManual> productosManuales, boolean soloHoy) throws Exception {
+    public static File generarPickit(File stockExcel, File combosExcel, List<ProductoManual> productosManuales,
+                                     boolean soloHoy, boolean useML, boolean useNube, boolean useManual) throws Exception {
 
-        AppLogger.info("PICKIT - Despacho ML: " + (soloHoy ? "Hasta hoy 23:59:59" : "Sin límite"));
+        List<String> canalesActivos = new ArrayList<>();
+        if (useML) canalesActivos.add("ML");
+        if (useNube) canalesActivos.add("Nube");
+        if (useManual) canalesActivos.add("Manual");
+        AppLogger.info("PICKIT - Canales: " + String.join(", ", canalesActivos));
+        if (useML) AppLogger.info("PICKIT - Despacho ML: " + (soloHoy ? "Hasta hoy 23:59:59" : "Sin límite"));
 
-        // Paso 1: Inicializar APIs
-        AppLogger.info("PICKIT - Paso 1: Inicializando APIs (MercadoLibre + Tienda Nube)...");
-        if (!MercadoLibreAPI.inicializar()) {
-            throw new RuntimeException("No se pudieron inicializar los tokens de MercadoLibre.");
+        // Paso 1: Inicializar APIs según canales seleccionados
+        AppLogger.info("PICKIT - Paso 1: Inicializando APIs...");
+        String userId = null;
+        if (useML) {
+            if (!MercadoLibreAPI.inicializar()) {
+                throw new RuntimeException("No se pudieron inicializar los tokens de MercadoLibre.");
+            }
+            userId = MercadoLibreAPI.getUserId();
         }
-        final String userId = MercadoLibreAPI.getUserId();
 
-        if (!TiendaNubeApi.inicializar()) {
-            throw new RuntimeException("No se pudieron inicializar las credenciales de Tienda Nube.");
+        if (useNube) {
+            if (!TiendaNubeApi.inicializar()) {
+                throw new RuntimeException("No se pudieron inicializar las credenciales de Tienda Nube.");
+            }
         }
 
         final List<Venta> todasLasVentas = Collections.synchronizedList(new ArrayList<>());
         final List<OrdenML> todasLasOrdenesML = Collections.synchronizedList(new ArrayList<>());
 
-        // Pasos 2-5: Obtener ventas en paralelo
-        var futureMLPrint = executor.submit(() -> {
-            AppLogger.info("PICKIT - Paso 2: Obteniendo ventas ML ready_to_print...");
-            MLOrderResult result = MercadoLibreAPI.obtenerVentasReadyToPrint(userId, false);
-            todasLasVentas.addAll(result.ventas());
-            todasLasOrdenesML.addAll(result.ordenes());
-            return result.ventas().size();
-        });
+        // Pasos 2-5: Obtener ventas en paralelo (solo canales habilitados)
+        int ordenesNube = 0, productosNube = 0;
 
-        var futureMLAgreement = executor.submit(() -> {
-            AppLogger.info("PICKIT - Paso 3: Obteniendo ventas ML acuerdo con el vendedor...");
-            MLOrderResult result = MercadoLibreAPI.obtenerVentasSellerAgreement(userId);
-            todasLasVentas.addAll(result.ventas());
-            todasLasOrdenesML.addAll(result.ordenes());
-            return result.ventas().size();
-        });
+        java.util.concurrent.Future<MLOrderResult> futureMLPrint = null;
+        java.util.concurrent.Future<MLOrderResult> futureMLAgreement = null;
+        java.util.concurrent.Future<TiendaNubeApi.VentasResult> futureNube = null;
+        java.util.concurrent.Future<TiendaNubeApi.VentasResult> futureGastro = null;
 
-        var futureNube = executor.submit(() -> {
-            AppLogger.info("PICKIT - Paso 4: Obteniendo ventas KT HOGAR (Tienda Nube)...");
-            var result = TiendaNubeApi.obtenerVentasHogar();
-            todasLasVentas.addAll(result.ventas());
-            return result;
-        });
+        if (useML) {
+            final String uid = userId;
+            futureMLPrint = executor.submit(() -> {
+                AppLogger.info("PICKIT - Paso 2: Obteniendo ventas ML ready_to_print...");
+                MLOrderResult result = MercadoLibreAPI.obtenerVentasReadyToPrint(uid, false);
+                todasLasVentas.addAll(result.ventas());
+                todasLasOrdenesML.addAll(result.ordenes());
+                return result;
+            });
 
-        var futureGastro = executor.submit(() -> {
-            AppLogger.info("PICKIT - Paso 5: Obteniendo ventas KT GASTRO (Tienda Nube)...");
-            var result = TiendaNubeApi.obtenerVentasGastro();
-            todasLasVentas.addAll(result.ventas());
-            return result;
-        });
+            futureMLAgreement = executor.submit(() -> {
+                AppLogger.info("PICKIT - Paso 3: Obteniendo ventas ML acuerdo con el vendedor...");
+                MLOrderResult result = MercadoLibreAPI.obtenerVentasSellerAgreement(uid);
+                todasLasVentas.addAll(result.ventas());
+                todasLasOrdenesML.addAll(result.ordenes());
+                return result;
+            });
+        }
 
-        int countMLPrint = futureMLPrint.get();
-        int countMLAgreement = futureMLAgreement.get();
-        var resultNube = futureNube.get();
-        var resultGastro = futureGastro.get();
-        int countNube = resultNube.totalOrdenes();
-        int countGastro = resultGastro.totalOrdenes();
+        if (useNube) {
+            futureNube = executor.submit(() -> {
+                AppLogger.info("PICKIT - Paso 4: Obteniendo ventas KT HOGAR (Tienda Nube)...");
+                var result = TiendaNubeApi.obtenerVentasHogar();
+                todasLasVentas.addAll(result.ventas());
+                return result;
+            });
+
+            futureGastro = executor.submit(() -> {
+                AppLogger.info("PICKIT - Paso 5: Obteniendo ventas KT GASTRO (Tienda Nube)...");
+                var result = TiendaNubeApi.obtenerVentasGastro();
+                todasLasVentas.addAll(result.ventas());
+                return result;
+            });
+        }
+
+        int ordenesML = 0, productosML = 0;
+        if (futureMLPrint != null) {
+            MLOrderResult r = futureMLPrint.get();
+            ordenesML += r.ordenes().size();
+            productosML += r.ventas().size();
+        }
+        if (futureMLAgreement != null) {
+            MLOrderResult r = futureMLAgreement.get();
+            ordenesML += r.ordenes().size();
+            productosML += r.ventas().size();
+        }
+        if (futureNube != null) {
+            var r = futureNube.get();
+            ordenesNube += r.totalOrdenes();
+            productosNube += r.ventas().size();
+        }
+        if (futureGastro != null) {
+            var r = futureGastro.get();
+            ordenesNube += r.totalOrdenes();
+            productosNube += r.ventas().size();
+        }
 
         // Paso 6: Consolidar ventas
         AppLogger.info("PICKIT - Paso 6: Consolidando ventas...");
-        AppLogger.info(String.format("ML ready_to_print: %d | ML acuerdo: %d | KT HOGAR: %d | KT GASTRO: %d | Total: %d",
-                countMLPrint, countMLAgreement, countNube, countGastro, todasLasVentas.size()));
 
-        if (productosManuales != null && !productosManuales.isEmpty()) {
+        if (useManual && productosManuales != null && !productosManuales.isEmpty()) {
             for (ProductoManual pm : productosManuales) {
                 todasLasVentas.add(new Venta(pm.getSku(), pm.getCantidad(), "MANUAL"));
             }
-            AppLogger.info("PICKIT - Productos manuales agregados: " + productosManuales.size());
         }
 
         if (todasLasVentas.isEmpty()) {
-            throw new RuntimeException("No se encontraron ventas para procesar. Verificar conexión a las APIs.");
+            throw new RuntimeException("No se encontraron ventas para procesar.");
         }
 
         // Obtener SLAs
@@ -159,6 +194,11 @@ public class PickitGenerator {
                 todasLasOrdenesML.removeIf(o -> ventaIdsExcluir.contains(o.getVentaId()));
                 AppLogger.info("PICKIT - Filtro SLA Hoy: " + ventaIdsExcluir.size() + " órdenes ML excluidas");
             }
+        }
+
+        if (todasLasVentas.isEmpty()) {
+            AppLogger.warn("PICKIT - No quedaron ventas para procesar después del filtro SLA.");
+            return null;
         }
 
         // Paso 7: Limpiar SKUs
@@ -345,18 +385,14 @@ public class PickitGenerator {
         File resultado = PickitExcelWriter.generar(pickitItems, carrosOrdenes, slaOrdenes, soloHoy);
 
         int skusOk = skuCantidad.size() - skusNoEncontrados - skusStockInsuficiente - skusConError;
-        int countManuales = (productosManuales != null) ? productosManuales.size() : 0;
 
-        int totalOrdenes = countMLPrint + countMLAgreement + countNube + countGastro + countManuales;
+        int countManuales = (useManual && productosManuales != null) ? productosManuales.size() : 0;
 
         AppLogger.success("PICKIT - ========== RESUMEN ==========");
-        AppLogger.success("PICKIT -   ML ready_to_print: " + countMLPrint + " órdenes");
-        AppLogger.success("PICKIT -   ML acuerdo: " + countMLAgreement + " órdenes");
-        AppLogger.success("PICKIT -   KT HOGAR: " + countNube + " órdenes");
-        AppLogger.success("PICKIT -   KT GASTRO: " + countGastro + " órdenes");
-        if (countManuales > 0) AppLogger.success("PICKIT -   Manuales: " + countManuales);
-        AppLogger.success("PICKIT -   Total: " + totalOrdenes + " órdenes | " + todasLasVentas.size() + " productos");
-        AppLogger.success("PICKIT -   SKUs únicos: " + skuCantidad.size() + " | OK: " + skusOk);
+        if (useML) AppLogger.success("PICKIT -   ML: " + ordenesML + " órdenes");
+        if (useNube) AppLogger.success("PICKIT -   Nube: " + ordenesNube + " órdenes");
+        if (countManuales > 0) AppLogger.success("PICKIT -   Manual: " + countManuales);
+        AppLogger.success("PICKIT -   SKUs en Excel: " + pickitItems.size() + " | OK: " + skusOk);
         AppLogger.success("PICKIT -   Ordenes CARROS: " + carrosOrdenes.size());
         if (skusNoEncontrados > 0) AppLogger.warn("PICKIT -   SKUs no encontrados en Stock: " + skusNoEncontrados);
         if (skusStockInsuficiente > 0) AppLogger.warn("PICKIT -   SKUs con stock insuficiente: " + skusStockInsuficiente);

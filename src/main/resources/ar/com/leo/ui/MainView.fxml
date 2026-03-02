@@ -34,8 +34,15 @@
                 <!-- ══ Tab Pickit ══ -->
                 <Tab text="&#x1F4E6; Pickit" closable="false" styleClass="tab, tab-pickit">
                     <VBox spacing="10" styleClass="tab-pickit-content" style="-fx-padding: 15;">
-                        <!-- Radio SLA -->
+                        <!-- Canales -->
                         <HBox spacing="15" alignment="CENTER_LEFT">
+                            <Label text="Canales:" style="-fx-font-weight: bold;"/>
+                            <CheckBox fx:id="pickitCheckML" text="&#x1F4E6; ML" selected="true"/>
+                            <CheckBox fx:id="pickitCheckNube" text="&#x1F310; Nube" selected="true"/>
+                            <CheckBox fx:id="pickitCheckManual" text="&#x270D; Manual" selected="true"/>
+                        </HBox>
+                        <!-- Radio SLA -->
+                        <HBox fx:id="pickitSlaSection" spacing="15" alignment="CENTER_LEFT">
                             <Label text="Despacho ML:" style="-fx-font-weight: bold;"/>
                             <RadioButton fx:id="radioPickitSlaHoy" text="&#x1F4C5; Hasta hoy" selected="true"/>
                             <RadioButton fx:id="radioPickitSlaTodos" text="&#x1F4C6; Sin l&#xED;mite"/>
@@ -43,7 +50,7 @@
                         <!-- Separador -->
                         <Separator/>
                         <!-- Productos Manuales -->
-                        <VBox spacing="5">
+                        <VBox fx:id="pickitManualSection" spacing="5">
                             <Label text="&#x1F4CB; Productos manuales:" style="-fx-font-weight: bold;"/>
                             <HBox spacing="8" alignment="CENTER_LEFT">
                                 <TextField fx:id="pickitSkuField" promptText="SKU" prefWidth="120"/>
@@ -117,6 +124,11 @@
                               managed="false" visible="false">
                             <padding><Insets top="8" bottom="8" left="15" right="15"/></padding>
                             <Label fx:id="statsLabel" styleClass="stats-label" text="" HBox.hgrow="ALWAYS"/>
+                        </HBox>
+                        <HBox fx:id="fileLinkBar" spacing="10" alignment="CENTER_LEFT"
+                              managed="false" visible="false"
+                              style="-fx-background-color: #e8f5e9;">
+                            <padding><Insets top="6" bottom="6" left="15" right="15"/></padding>
                         </HBox>
                         <HBox fx:id="searchBar" alignment="CENTER_LEFT" managed="false" visible="false"
                               style="-fx-padding: 8 15 8 15;">

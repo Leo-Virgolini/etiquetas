@@ -75,7 +75,6 @@ public class PedidosExcelWriter {
         final XSSFCellStyle productNormal;
         final XSSFCellStyle productHighlight;
         final XSSFCellStyle productWrap;
-        final XSSFCellStyle productHighlightWrap;
         final XSSFCellStyle empty;
         final XSSFCellStyle smallLabel;
         final XSSFCellStyle smallLabelRight;
@@ -139,12 +138,12 @@ public class PedidosExcelWriter {
             productNormal.setVerticalAlignment(VerticalAlignment.CENTER);
             setBordersOn(productNormal, BorderStyle.THIN);
 
-            // Producto highlight (11pt bold, fondo amarillo)
+            // Producto highlight (11pt bold, fondo negro con texto blanco para cantidad > 1)
             productHighlight = wb.createCellStyle();
-            productHighlight.setFont(createXFont(wb, 11, true, false));
+            productHighlight.setFont(createXFont(wb, 11, true, false, xcolor(255, 255, 255)));
             productHighlight.setAlignment(HorizontalAlignment.CENTER);
             productHighlight.setVerticalAlignment(VerticalAlignment.CENTER);
-            productHighlight.setFillForegroundColor(xcolor(255, 255, 153));
+            productHighlight.setFillForegroundColor(xcolor(0, 0, 0));
             productHighlight.setFillPattern(FillPatternType.SOLID_FOREGROUND);
             setBordersOn(productHighlight, BorderStyle.THIN);
 
@@ -153,12 +152,6 @@ public class PedidosExcelWriter {
             productWrap.cloneStyleFrom(productNormal);
             productWrap.setWrapText(true);
             productWrap.setAlignment(HorizontalAlignment.LEFT);
-
-            // Producto highlight wrap
-            productHighlightWrap = wb.createCellStyle();
-            productHighlightWrap.cloneStyleFrom(productHighlight);
-            productHighlightWrap.setWrapText(true);
-            productHighlightWrap.setAlignment(HorizontalAlignment.LEFT);
 
             // Vacío
             empty = wb.createCellStyle();
@@ -220,6 +213,12 @@ public class PedidosExcelWriter {
             f.setFontHeightInPoints((short) size);
             f.setBold(bold);
             f.setItalic(italic);
+            return f;
+        }
+
+        private static XSSFFont createXFont(XSSFWorkbook wb, int size, boolean bold, boolean italic, XSSFColor color) {
+            XSSFFont f = createXFont(wb, size, bold, italic);
+            f.setColor(color);
             return f;
         }
 
@@ -564,9 +563,9 @@ public class PedidosExcelWriter {
             if (i < productos.size()) {
                 ProductLine p = productos.get(i);
                 boolean hl = p.cantidad() > 1;
-                CellStyle skuStyle = hl ? styles.productHighlight : styles.productNormal;
+                CellStyle skuStyle = styles.productNormal;
                 CellStyle cantStyle = hl ? styles.productHighlight : styles.productNormal;
-                CellStyle detStyle = hl ? styles.productHighlightWrap : styles.productWrap;
+                CellStyle detStyle = styles.productWrap;
 
                 mergeAndSet(sheet, row, row, startCol, startCol + 1, p.sku(), skuStyle);
                 setCantidadCell(sheet, row, startCol + 2, p.cantidad(), cantStyle);

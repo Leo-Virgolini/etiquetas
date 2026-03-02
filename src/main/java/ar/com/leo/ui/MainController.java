@@ -36,6 +36,7 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
 import javafx.scene.layout.HBox;
+import javafx.util.Duration;
 import javafx.scene.layout.VBox;
 import javafx.scene.media.AudioClip;
 import javafx.scene.paint.Color;
@@ -78,6 +79,8 @@ public class MainController {
     private Label statsLabel;
     @FXML
     private HBox statsBar;
+    @FXML
+    private HBox fileLinkBar;
     @FXML
     private HBox searchBar;
     @FXML
@@ -132,6 +135,16 @@ public class MainController {
     private RadioButton radioPickitSlaHoy;
     @FXML
     private RadioButton radioPickitSlaTodos;
+    @FXML
+    private CheckBox pickitCheckML;
+    @FXML
+    private CheckBox pickitCheckNube;
+    @FXML
+    private CheckBox pickitCheckManual;
+    @FXML
+    private HBox pickitSlaSection;
+    @FXML
+    private VBox pickitManualSection;
     @FXML
     private TextField pickitSkuField;
     @FXML
@@ -696,7 +709,10 @@ public class MainController {
                     showLabelTable();
                     displayResult(result);
                     if (finalSavedFile != null) {
-                        LogHelper.addFileLink(statsBar, finalSavedFile);
+                        fileLinkBar.getChildren().clear();
+                        LogHelper.addFileLink(fileLinkBar, finalSavedFile);
+                        fileLinkBar.setVisible(true);
+                        fileLinkBar.setManaged(true);
                     }
                     if (finalSaveError != null) {
                         AlertHelper.showError("Error al guardar", "No se pudo guardar el archivo automáticamente:\n" + finalSaveError);
@@ -966,6 +982,11 @@ public class MainController {
         orderTable.setDisable(loading);
         labelTable.setDisable(loading);
         statsBar.setDisable(loading);
+        fileLinkBar.setDisable(loading);
+        if (loading) {
+            fileLinkBar.setVisible(false);
+            fileLinkBar.setManaged(false);
+        }
         searchBar.setDisable(loading);
         downloadLabelsBtn.setDisable(loading);
         comboSheetBtn.setDisable(loading);
@@ -1163,11 +1184,16 @@ public class MainController {
             for (Map.Entry<String, Integer> entry : countByZone.entrySet()) {
                 if (entry.getValue() > 0) sj.add(entry.getKey() + ": " + entry.getValue());
             }
-            statsLabel.setText(sj.toString());
+            String text = sj.toString();
+            statsLabel.setText(text);
+            Tooltip tip = new Tooltip(text.replace(" | ", "\n"));
+            tip.setShowDelay(Duration.millis(200));
+            statsLabel.setTooltip(tip);
         };
 
         if (rows.isEmpty()) {
             statsLabel.setText("No hay ordenes para mostrar");
+            statsLabel.setTooltip(null);
         } else {
             updateStats.run();
         }
@@ -1449,8 +1475,8 @@ public class MainController {
 
                         // Convertir a forma renderizada (hex → char placeholder) para simular word-wrap
                         String rendered = toRenderedForm(textForPos);
-                        // Factor alto para word-wrap (conservativo, coincide con wrapping real de ZPL)
-                        double wrapCharW = fontW * 0.48;
+                        // Factor para word-wrap (ajustado para coincidir con wrapping real de ZPL A0)
+                        double wrapCharW = fontW * 0.46;
                         int charsPerLine = Math.max(1, (int) (fbWidth / wrapCharW));
 
                         // Simular word-wrap de ^FB para encontrar posición en la última línea
@@ -1478,11 +1504,17 @@ public class MainController {
                             lineNum = fbLines - 1;
                         }
 
-                        // Factor de posición: truncado usa factor alto (badge cubre "..."),
-                        // no truncado usa factor bajo (badge pegado al texto)
-                        double posCharW = isTruncated ? fontW * 0.48 : fontW * 0.40;
-                        int padding = isTruncated ? 20 : 4;
-                        int qtyX = textX + (int) (lastLineChars * posCharW) + padding;
+                        // Badge inline después del texto visible
+                        String qtyTextTemp = qty + " u.";
+                        int boxWTemp = qtyTextTemp.length() * 13 + 8;
+                        double posCharW = fontW * 0.50;
+                        int qtyX = textX + (int) (lastLineChars * posCharW) + 16;
+
+                        // Si no cabe en la línea, mover a la siguiente alineado a la izquierda
+                        if (qtyX + boxWTemp > textX + fbWidth) {
+                            qtyX = textX;
+                            lineNum++;
+                        }
                         int qtyY = textY + lineNum * fontH;
 
                         mods.add(new int[]{qty, qtyX, qtyY, fontH, removeStart, removeEnd, fsEnd + 3});
@@ -1578,7 +1610,11 @@ public class MainController {
             }
         }
 
-        statsLabel.setText(sj.toString());
+        String text = sj.toString();
+        statsLabel.setText(text);
+        Tooltip tip = new Tooltip(text.replace(" | ", "\n"));
+        tip.setShowDelay(Duration.millis(200));
+        statsLabel.setTooltip(tip);
         statsBar.setVisible(true);
         statsBar.setManaged(true);
         searchBar.setVisible(true);
@@ -1628,6 +1664,11 @@ public class MainController {
         ToggleGroup slaGroup = new ToggleGroup();
         radioPickitSlaHoy.setToggleGroup(slaGroup);
         radioPickitSlaTodos.setToggleGroup(slaGroup);
+
+        // Checkbox ML habilita/deshabilita sección de despacho ML
+        pickitCheckML.selectedProperty().addListener((obs, old, val) -> pickitSlaSection.setDisable(!val));
+        // Checkbox Manual habilita/deshabilita sección de productos manuales
+        pickitCheckManual.selectedProperty().addListener((obs, old, val) -> pickitManualSection.setDisable(!val));
 
         // Tabla de productos manuales
         pickitColSku.setCellValueFactory(new PropertyValueFactory<>("sku"));
@@ -1861,16 +1902,33 @@ public class MainController {
         savePickitPreferences();
 
         boolean soloHoy = radioPickitSlaHoy.isSelected();
-        PickitService service = new PickitService(stockFile, combosFile, pickitProductosList, soloHoy, pickitLogTextFlow, pickitLogScrollPane);
+        boolean useML = pickitCheckML.isSelected();
+        boolean useNube = pickitCheckNube.isSelected();
+        boolean useManual = pickitCheckManual.isSelected();
+
+        if (!useML && !useNube && !useManual) {
+            pickitAppendLog("Error: seleccionar al menos un canal.", Color.FIREBRICK);
+            return;
+        }
+
+        PickitService service = new PickitService(stockFile, combosFile, pickitProductosList, soloHoy, useML, useNube, useManual, pickitLogTextFlow, pickitLogScrollPane);
 
         service.setOnRunning(e -> {
             pickitGenerateBtn.setDisable(true);
+            pickitCheckML.setDisable(true);
+            pickitCheckNube.setDisable(true);
+            pickitCheckManual.setDisable(true);
+            pickitSlaSection.setDisable(true);
+            pickitManualSection.setDisable(true);
+            tabPane.getTabs().forEach(t -> {
+                if (t != tabPane.getSelectionModel().getSelectedItem()) t.setDisable(true);
+            });
             pickitProgressIndicator.setVisible(true);
             pickitProgressIndicator.setManaged(true);
         });
         service.setOnSucceeded(e -> {
             if (successSound != null) successSound.play();
-            pickitGenerateBtn.setDisable(false);
+            pickitSetInputsEnabled();
             pickitProgressIndicator.setVisible(false);
             pickitProgressIndicator.setManaged(false);
         });
@@ -1880,11 +1938,22 @@ public class MainController {
             String mensaje = ex != null ? ex.getLocalizedMessage() : "Error desconocido";
             pickitAppendLog("\nERROR: " + mensaje, Color.FIREBRICK);
             AppLogger.error("Error Pickit: " + mensaje, ex);
-            pickitGenerateBtn.setDisable(false);
+            pickitSetInputsEnabled();
             pickitProgressIndicator.setVisible(false);
             pickitProgressIndicator.setManaged(false);
         });
         service.start();
+    }
+
+    private void pickitSetInputsEnabled() {
+        pickitGenerateBtn.setDisable(false);
+        pickitCheckML.setDisable(false);
+        pickitCheckNube.setDisable(false);
+        pickitCheckManual.setDisable(false);
+        // Restaurar estado según checkboxes (los bindings se re-evalúan)
+        pickitSlaSection.setDisable(!pickitCheckML.isSelected());
+        pickitManualSection.setDisable(!pickitCheckManual.isSelected());
+        tabPane.getTabs().forEach(t -> t.setDisable(false));
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -1911,16 +1980,24 @@ public class MainController {
     private void onPedidosGenerar() {
         pedidosLogTextFlow.getChildren().clear();
 
-        PedidosService service = new PedidosService(pedidosLogTextFlow, pedidosLogScrollPane);
+        String stockPath = excelFileField.getText();
+        File stockFile = (stockPath != null && !stockPath.isBlank()) ? new File(stockPath) : null;
+        if (stockFile != null && !stockFile.isFile()) stockFile = null;
+
+        PedidosService service = new PedidosService(stockFile, pedidosLogTextFlow, pedidosLogScrollPane);
 
         service.setOnRunning(e -> {
             pedidosGenerateBtn.setDisable(true);
+            tabPane.getTabs().forEach(t -> {
+                if (t != tabPane.getSelectionModel().getSelectedItem()) t.setDisable(true);
+            });
             pedidosProgressIndicator.setVisible(true);
             pedidosProgressIndicator.setManaged(true);
         });
         service.setOnSucceeded(e -> {
             if (successSound != null) successSound.play();
             pedidosGenerateBtn.setDisable(false);
+            tabPane.getTabs().forEach(t -> t.setDisable(false));
             pedidosProgressIndicator.setVisible(false);
             pedidosProgressIndicator.setManaged(false);
         });
@@ -1931,6 +2008,7 @@ public class MainController {
             pedidosAppendLog("\nERROR: " + mensaje, Color.FIREBRICK);
             AppLogger.error("Error Pedidos: " + mensaje, ex);
             pedidosGenerateBtn.setDisable(false);
+            tabPane.getTabs().forEach(t -> t.setDisable(false));
             pedidosProgressIndicator.setVisible(false);
             pedidosProgressIndicator.setManaged(false);
         });
