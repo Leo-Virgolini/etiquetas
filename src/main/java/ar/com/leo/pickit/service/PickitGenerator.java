@@ -111,6 +111,7 @@ public class PickitGenerator {
         }
 
         int ordenesML = 0, productosML = 0;
+        int ordenesHogar = 0, ordenesGastro = 0;
         if (futureMLPrint != null) {
             MLOrderResult r = futureMLPrint.get();
             ordenesML += r.ordenes().size();
@@ -123,12 +124,14 @@ public class PickitGenerator {
         }
         if (futureNube != null) {
             var r = futureNube.get();
-            ordenesNube += r.totalOrdenes();
+            ordenesHogar = r.totalOrdenes();
+            ordenesNube += ordenesHogar;
             productosNube += r.ventas().size();
         }
         if (futureGastro != null) {
             var r = futureGastro.get();
-            ordenesNube += r.totalOrdenes();
+            ordenesGastro = r.totalOrdenes();
+            ordenesNube += ordenesGastro;
             productosNube += r.ventas().size();
         }
 
@@ -388,12 +391,23 @@ public class PickitGenerator {
 
         int countManuales = (useManual && productosManuales != null) ? productosManuales.size() : 0;
 
+        int ordenesMLEnvio = shipmentIdsUnicos.size();
+        int ordenesMLAcuerdo = (int) todasLasOrdenesML.stream().filter(o -> o.getShipmentId() == null).count();
+        int totalOrdenes = ordenesMLEnvio + ordenesMLAcuerdo + ordenesNube + countManuales;
+
         AppLogger.success("PICKIT - ========== RESUMEN ==========");
-        if (useML) AppLogger.success("PICKIT -   ML: " + ordenesML + " órdenes");
-        if (useNube) AppLogger.success("PICKIT -   Nube: " + ordenesNube + " órdenes");
-        if (countManuales > 0) AppLogger.success("PICKIT -   Manual: " + countManuales);
+        AppLogger.success("PICKIT -   Total órdenes: " + totalOrdenes);
+        if (useML) {
+            AppLogger.success("PICKIT -     ML envío: " + ordenesMLEnvio);
+            AppLogger.success("PICKIT -     ML retiro: " + ordenesMLAcuerdo);
+        }
+        if (useNube) {
+            AppLogger.success("PICKIT -     Nube KT Hogar: " + ordenesHogar);
+            AppLogger.success("PICKIT -     Nube KT Gastro: " + ordenesGastro);
+        }
+        if (countManuales > 0) AppLogger.success("PICKIT -     Manual: " + countManuales);
         AppLogger.success("PICKIT -   SKUs en Excel: " + pickitItems.size() + " | OK: " + skusOk);
-        AppLogger.success("PICKIT -   Ordenes CARROS: " + carrosOrdenes.size());
+        AppLogger.success("PICKIT -   Carros: " + carrosOrdenes.size());
         if (skusNoEncontrados > 0) AppLogger.warn("PICKIT -   SKUs no encontrados en Stock: " + skusNoEncontrados);
         if (skusStockInsuficiente > 0) AppLogger.warn("PICKIT -   SKUs con stock insuficiente: " + skusStockInsuficiente);
         if (skusConError > 0) AppLogger.warn("PICKIT -   SKUs con error: " + skusConError);

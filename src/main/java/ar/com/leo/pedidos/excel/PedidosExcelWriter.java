@@ -49,8 +49,8 @@ public class PedidosExcelWriter {
     private static final int COL_CANT_WIDTH = 14 * 256;
     private static final int COL_DETALLE_WIDTH = 24 * 256;
 
-    // Altura máxima de página en puntos (A4 portrait, compensando escala fitToWidth ~82%)
-    private static final float MAX_PAGE_HEIGHT = 990f;
+    // Altura máxima de página en puntos (A4 portrait, compensando escala fitToWidth ~85%)
+    private static final float MAX_PAGE_HEIGHT = 950f;
 
     // ── Records para agrupación ──
 
@@ -373,7 +373,7 @@ public class PedidosExcelWriter {
 
             // Page break si no cabe en la página actual
             if (currentPageHeight > 0 && currentPageHeight + cardHeight > MAX_PAGE_HEIGHT) {
-                sheet.setRowBreak(currentRow);
+                sheet.setRowBreak(currentRow - 1);
                 currentPageHeight = 0;
             }
 
@@ -412,7 +412,7 @@ public class PedidosExcelWriter {
         for (int i = 0; i < items.size(); i++) {
             // Page break si no cabe otra tarjeta
             if (currentPageHeight > 0 && currentPageHeight + etiquetaHeight > MAX_PAGE_HEIGHT) {
-                sheet.setRowBreak(currentRow);
+                sheet.setRowBreak(currentRow - 1);
                 currentPageHeight = 0;
             }
 
@@ -442,7 +442,7 @@ public class PedidosExcelWriter {
         mergeAndSet(sheet, startRow, startRow + 1, startCol, startCol + 1,
                 ventaId, styles.bigNumber);
         mergeAndSet(sheet, startRow, startRow + 1, startCol + 2, startCol + 3,
-                "ML\n(Retiro)", styles.tiendaBadge);
+                "ML\n(RETIRO)", styles.tiendaBadge);
         mergeAndSet(sheet, startRow, startRow + 1, startCol + 4, endCol,
                 formatFecha(group.fecha()), styles.fecha);
 
@@ -598,6 +598,8 @@ public class PedidosExcelWriter {
         sheet.setMargin(Sheet.TopMargin, 0.2);
         sheet.setMargin(Sheet.BottomMargin, 0.2);
         sheet.setHorizontallyCenter(true);
+        sheet.setMargin(Sheet.HeaderMargin, 0.0);
+        sheet.setMargin(Sheet.FooterMargin, 0.15);
         sheet.getFooter().setCenter("Página &P de &N");
     }
 
