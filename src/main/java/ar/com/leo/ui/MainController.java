@@ -136,6 +136,8 @@ public class MainController {
     @FXML
     private RadioButton radioPickitSlaTodos;
     @FXML
+    private CheckBox pickitCheckTurbo;
+    @FXML
     private CheckBox pickitCheckML;
     @FXML
     private CheckBox pickitCheckNube;
@@ -1510,10 +1512,10 @@ public class MainController {
                         double posCharW = fontW * 0.50;
                         int qtyX = textX + (int) (lastLineChars * posCharW) + 16;
 
-                        // Si no cabe en la línea, mover a la siguiente alineado a la izquierda
+                        // Si no cabe en la línea, alinear a la derecha en la misma línea
+                        // (evita colisionar con la línea de detalle/Color debajo)
                         if (qtyX + boxWTemp > textX + fbWidth) {
-                            qtyX = textX;
-                            lineNum++;
+                            qtyX = textX + fbWidth - boxWTemp;
                         }
                         int qtyY = textY + lineNum * fontH;
 
@@ -1669,6 +1671,16 @@ public class MainController {
         pickitCheckML.selectedProperty().addListener((obs, old, val) -> pickitSlaSection.setDisable(!val));
         // Checkbox Manual habilita/deshabilita sección de productos manuales
         pickitCheckManual.selectedProperty().addListener((obs, old, val) -> pickitManualSection.setDisable(!val));
+
+        // Solo Turbo: desactiva Nube y Manual cuando está marcado
+        pickitCheckTurbo.selectedProperty().addListener((obs, old, val) -> {
+            pickitCheckNube.setDisable(val);
+            pickitCheckManual.setDisable(val);
+            if (val) {
+                pickitCheckNube.setSelected(false);
+                pickitCheckManual.setSelected(false);
+            }
+        });
 
         // Tabla de productos manuales
         pickitColSku.setCellValueFactory(new PropertyValueFactory<>("sku"));
@@ -1902,6 +1914,7 @@ public class MainController {
         savePickitPreferences();
 
         boolean soloHoy = radioPickitSlaHoy.isSelected();
+        boolean soloTurbo = pickitCheckTurbo.isSelected();
         boolean useML = pickitCheckML.isSelected();
         boolean useNube = pickitCheckNube.isSelected();
         boolean useManual = pickitCheckManual.isSelected();
@@ -1911,7 +1924,7 @@ public class MainController {
             return;
         }
 
-        PickitService service = new PickitService(stockFile, combosFile, pickitProductosList, soloHoy, useML, useNube, useManual, pickitLogTextFlow, pickitLogScrollPane);
+        PickitService service = new PickitService(stockFile, combosFile, pickitProductosList, soloHoy, soloTurbo, useML, useNube, useManual, pickitLogTextFlow, pickitLogScrollPane);
 
         service.setOnRunning(e -> {
             pickitGenerateBtn.setDisable(true);

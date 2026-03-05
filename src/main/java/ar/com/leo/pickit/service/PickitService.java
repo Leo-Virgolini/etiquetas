@@ -29,6 +29,7 @@ public class PickitService extends Service<File> {
     private final File combosExcel;
     private final List<ProductoManual> productosManuales;
     private final boolean soloHoy;
+    private final boolean soloTurbo;
     private final boolean useML;
     private final boolean useNube;
     private final boolean useManual;
@@ -36,12 +37,13 @@ public class PickitService extends Service<File> {
     private final ScrollPane logScrollPane;
 
     public PickitService(File stockExcel, File combosExcel, ObservableList<ProductoManual> productosManuales,
-                         boolean soloHoy, boolean useML, boolean useNube, boolean useManual,
+                         boolean soloHoy, boolean soloTurbo, boolean useML, boolean useNube, boolean useManual,
                          TextFlow logTextFlow, ScrollPane logScrollPane) {
         this.stockExcel = stockExcel;
         this.combosExcel = combosExcel;
         this.productosManuales = new ArrayList<>(productosManuales);
         this.soloHoy = soloHoy;
+        this.soloTurbo = soloTurbo;
         this.useML = useML;
         this.useNube = useNube;
         this.useManual = useManual;
@@ -63,7 +65,7 @@ public class PickitService extends Service<File> {
                 });
 
                 try {
-                    return PickitGenerator.generarPickit(stockExcel, combosExcel, productosManuales, soloHoy, useML, useNube, useManual);
+                    return PickitGenerator.generarPickit(stockExcel, combosExcel, productosManuales, soloHoy, soloTurbo, useML, useNube, useManual);
                 } finally {
                     AppLogger.setUiLogger(null);
                 }

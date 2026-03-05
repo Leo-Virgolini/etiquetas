@@ -46,6 +46,8 @@
                             <Label text="Despacho ML:" style="-fx-font-weight: bold;"/>
                             <RadioButton fx:id="radioPickitSlaHoy" text="&#x1F4C5; Hasta hoy" selected="true"/>
                             <RadioButton fx:id="radioPickitSlaTodos" text="&#x1F4C6; Sin l&#xED;mite"/>
+                            <Separator orientation="VERTICAL"/>
+                            <CheckBox fx:id="pickitCheckTurbo" text="&#x26A1; Solo Turbo"/>
                         </HBox>
                         <!-- Separador -->
                         <Separator/>

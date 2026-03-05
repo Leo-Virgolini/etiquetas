@@ -39,7 +39,16 @@ public class PickitGenerator {
     }
 
     public static File generarPickit(File stockExcel, File combosExcel, List<ProductoManual> productosManuales,
-                                     boolean soloHoy, boolean useML, boolean useNube, boolean useManual) throws Exception {
+                                     boolean soloHoy, boolean soloTurbo, boolean useML, boolean useNube, boolean useManual) throws Exception {
+
+        // Si soloTurbo, forzar solo ML (turbo es exclusivo de MercadoLibre)
+        if (soloTurbo) {
+            useNube = false;
+            useManual = false;
+            if (!useML) {
+                throw new RuntimeException("Filtro 'Solo Turbo' requiere el canal ML habilitado.");
+            }
+        }
 
         List<String> canalesActivos = new ArrayList<>();
         if (useML) canalesActivos.add("ML");
@@ -47,6 +56,7 @@ public class PickitGenerator {
         if (useManual) canalesActivos.add("Manual");
         AppLogger.info("PICKIT - Canales: " + String.join(", ", canalesActivos));
         if (useML) AppLogger.info("PICKIT - Despacho ML: " + (soloHoy ? "Hasta hoy 23:59:59" : "Sin límite"));
+        if (soloTurbo) AppLogger.info("PICKIT - Filtro: Solo envíos TURBO (Nube y Manual ignorados)");
 
         // Paso 1: Inicializar APIs según canales seleccionados
         AppLogger.info("PICKIT - Paso 1: Inicializando APIs...");
@@ -85,13 +95,17 @@ public class PickitGenerator {
                 return result;
             });
 
-            futureMLAgreement = executor.submit(() -> {
-                AppLogger.info("PICKIT - Paso 3: Obteniendo ventas ML acuerdo con el vendedor...");
-                MLOrderResult result = MercadoLibreAPI.obtenerVentasSellerAgreement(uid);
-                todasLasVentas.addAll(result.ventas());
-                todasLasOrdenesML.addAll(result.ordenes());
-                return result;
-            });
+            if (!soloTurbo) {
+                futureMLAgreement = executor.submit(() -> {
+                    AppLogger.info("PICKIT - Paso 3: Obteniendo ventas ML acuerdo con el vendedor...");
+                    MLOrderResult result = MercadoLibreAPI.obtenerVentasSellerAgreement(uid);
+                    todasLasVentas.addAll(result.ventas());
+                    todasLasOrdenesML.addAll(result.ordenes());
+                    return result;
+                });
+            } else {
+                AppLogger.info("PICKIT - Paso 3: Omitido (seller_agreement no tiene envíos turbo)");
+            }
         }
 
         if (useNube) {
@@ -199,8 +213,45 @@ public class PickitGenerator {
             }
         }
 
+        // Filtrar solo envíos turbo si está habilitado
+        if (soloTurbo && !slaMap.isEmpty()) {
+            Map<Long, List<OrdenML>> tempPorVenta = new LinkedHashMap<>();
+            for (OrdenML orden : todasLasOrdenesML) {
+                tempPorVenta.computeIfAbsent(orden.getVentaId(), k -> new ArrayList<>()).add(orden);
+            }
+
+            Set<Long> ventaIdsNoTurbo = new HashSet<>();
+            for (Map.Entry<Long, List<OrdenML>> entry : tempPorVenta.entrySet()) {
+                boolean esTurbo = false;
+                for (OrdenML orden : entry.getValue()) {
+                    if (orden.getShipmentId() != null && slaMap.containsKey(orden.getShipmentId())
+                            && slaMap.get(orden.getShipmentId()).turbo()) {
+                        esTurbo = true;
+                        break;
+                    }
+                }
+                if (!esTurbo) {
+                    ventaIdsNoTurbo.add(entry.getKey());
+                }
+            }
+
+            if (!ventaIdsNoTurbo.isEmpty()) {
+                Set<Venta> ventasARemover = Collections.newSetFromMap(new IdentityHashMap<>());
+                for (Long ventaId : ventaIdsNoTurbo) {
+                    if (tempPorVenta.containsKey(ventaId)) {
+                        for (OrdenML orden : tempPorVenta.get(ventaId)) {
+                            ventasARemover.addAll(orden.getItems());
+                        }
+                    }
+                }
+                todasLasVentas.removeAll(ventasARemover);
+                todasLasOrdenesML.removeIf(o -> ventaIdsNoTurbo.contains(o.getVentaId()));
+                AppLogger.info("PICKIT - Filtro Turbo: " + ventaIdsNoTurbo.size() + " órdenes no-turbo excluidas");
+            }
+        }
+
         if (todasLasVentas.isEmpty()) {
-            AppLogger.warn("PICKIT - No quedaron ventas para procesar después del filtro SLA.");
+            AppLogger.warn("PICKIT - No quedaron ventas para procesar después de los filtros.");
             return null;
         }
 
@@ -391,14 +442,26 @@ public class PickitGenerator {
 
         int countManuales = (useManual && productosManuales != null) ? productosManuales.size() : 0;
 
-        int ordenesMLEnvio = shipmentIdsUnicos.size();
-        int ordenesMLAcuerdo = (int) todasLasOrdenesML.stream().filter(o -> o.getShipmentId() == null).count();
+        // Recalcular contadores ML basándose en las órdenes que realmente quedaron después de filtros
+        Set<Long> shipmentIdsFinal = new HashSet<>();
+        int ordenesMLAcuerdo = 0;
+        for (OrdenML o : todasLasOrdenesML) {
+            if (o.getShipmentId() != null) shipmentIdsFinal.add(o.getShipmentId());
+            else ordenesMLAcuerdo++;
+        }
+        int ordenesMLEnvio = shipmentIdsFinal.size();
         int totalOrdenes = ordenesMLEnvio + ordenesMLAcuerdo + ordenesNube + countManuales;
+
+        int turboCount = 0;
+        for (Long sid : shipmentIdsFinal) {
+            if (slaMap.containsKey(sid) && slaMap.get(sid).turbo()) turboCount++;
+        }
 
         AppLogger.success("PICKIT - ========== RESUMEN ==========");
         AppLogger.success("PICKIT -   Total órdenes: " + totalOrdenes);
         if (useML) {
-            AppLogger.success("PICKIT -     ML envío: " + ordenesMLEnvio);
+            int ordenesMLNormal = ordenesMLEnvio - turboCount;
+            AppLogger.success("PICKIT -     ML envío: " + ordenesMLEnvio + " (normal: " + ordenesMLNormal + ", turbo: " + turboCount + ")");
             AppLogger.success("PICKIT -     ML retiro: " + ordenesMLAcuerdo);
         }
         if (useNube) {
