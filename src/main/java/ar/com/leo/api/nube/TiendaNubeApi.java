@@ -224,25 +224,7 @@ public class TiendaNubeApi {
 
                 // Detectar método de envío (priorizar nombre real de la API)
                 String shippingName = obtenerNombreEnvio(order);
-                String tipoEnvio;
-                String snUpper = shippingName != null ? shippingName.toUpperCase() : "";
-                if (shippingName != null && shippingName.equalsIgnoreCase("Local del Vendedor")) {
-                    tipoEnvio = "RETIRO";
-                } else if (esPickup(order) && !snUpper.contains("CORREO") && !snUpper.contains("ENVÍO NUBE") && !snUpper.contains("ENVIO NUBE")) {
-                    tipoEnvio = "RETIRO";
-                } else if (snUpper.contains("LLEGA HOY")) {
-                    // Quitar detalle entre paréntesis y normalizar a "LLEGA HOY - ZONA"
-                    int parenIdx = shippingName.indexOf('(');
-                    String clean = (parenIdx > 0 ? shippingName.substring(0, parenIdx).trim() : shippingName.trim()).toUpperCase();
-                    // "CABA - LLEGA HOY" → "LLEGA HOY - CABA"
-                    if (clean.contains(" - ") && !clean.startsWith("LLEGA HOY")) {
-                        String[] parts = clean.split("\\s*-\\s*", 2);
-                        clean = parts[1] + " - " + parts[0];
-                    }
-                    tipoEnvio = clean;
-                } else {
-                    tipoEnvio = "CORREO";
-                }
+                String tipoEnvio = clasificarEnvio(shippingName);
                 AppLogger.info("PEDIDOS NUBE (" + label + ") - Orden #" + orderNumber + " | Envío: " + tipoEnvio);
 
                 totalOrdenes++;
@@ -259,9 +241,7 @@ public class TiendaNubeApi {
                     }
                 }
 
-                if (shippingName != null
-                        && shippingName.toUpperCase().contains("LLEGA HOY")
-                        && !shippingName.toUpperCase().contains("ZIPPIN")) {
+                if (tipoEnvio.contains("LLEGA HOY")) {
 
                     JsonNode shippingAddress = order.path("shipping_address");
                     String domicilio = buildDomicilio(shippingAddress);
@@ -287,11 +267,39 @@ public class TiendaNubeApi {
     private static String buildLocalidad(JsonNode shippingAddress) {
         String locality = shippingAddress.path("locality").asString("").trim();
         String city = shippingAddress.path("city").asString("").trim();
+        String province = shippingAddress.path("province").asString("").trim();
 
-        if (!locality.isBlank() && !city.isBlank()) {
-            return locality + ", " + city;
+        StringBuilder sb = new StringBuilder();
+        if (!locality.isBlank()) sb.append(locality);
+        if (!city.isBlank()) {
+            if (!sb.isEmpty()) sb.append(", ");
+            sb.append(city);
         }
-        return city.isBlank() ? locality : city;
+        if (!province.isBlank()) {
+            if (!sb.isEmpty()) sb.append(", ");
+            sb.append(province);
+        }
+        return sb.toString();
+    }
+
+    private static String clasificarEnvio(String shippingName) {
+        String snUpper = shippingName != null ? shippingName.toUpperCase() : "";
+        if (snUpper.contains("ENVÍO NUBE") || snUpper.contains("ENVIO NUBE") || snUpper.contains("ZIPPIN")) {
+            return "CORREO";
+        }
+        if (shippingName != null && shippingName.equalsIgnoreCase("Local del Vendedor")) {
+            return "RETIRO";
+        }
+        if (snUpper.contains("LLEGA HOY")) {
+            int parenIdx = shippingName.indexOf('(');
+            String clean = (parenIdx > 0 ? shippingName.substring(0, parenIdx).trim() : shippingName.trim()).toUpperCase();
+            if (clean.contains(" - ") && !clean.startsWith("LLEGA HOY")) {
+                String[] parts = clean.split("\\s*-\\s*", 2);
+                clean = parts[1] + " - " + parts[0];
+            }
+            return clean;
+        }
+        return "FLEX";
     }
 
     private static String obtenerNombreEnvio(JsonNode order) {
@@ -477,23 +485,7 @@ public class TiendaNubeApi {
                     String shippingStatus = order.path("shipping_status").asString("");
 
                     // Clasificación
-                    String tipoEnvio;
-                    String snUpper = shippingName != null ? shippingName.toUpperCase() : "";
-                    if (shippingName != null && shippingName.equalsIgnoreCase("Local del Vendedor")) {
-                        tipoEnvio = "RETIRO";
-                    } else if (pickup && !snUpper.contains("CORREO") && !snUpper.contains("ENVÍO NUBE") && !snUpper.contains("ENVIO NUBE")) {
-                        tipoEnvio = "RETIRO";
-                    } else if (snUpper.contains("LLEGA HOY")) {
-                        int parenIdx = shippingName.indexOf('(');
-                        String clean = (parenIdx > 0 ? shippingName.substring(0, parenIdx).trim() : shippingName.trim()).toUpperCase();
-                        if (clean.contains(" - ") && !clean.startsWith("LLEGA HOY")) {
-                            String[] parts = clean.split("\\s*-\\s*", 2);
-                            clean = parts[1] + " - " + parts[0];
-                        }
-                        tipoEnvio = clean;
-                    } else {
-                        tipoEnvio = "CORREO";
-                    }
+                    String tipoEnvio = clasificarEnvio(shippingName);
 
                     System.out.println("  shipping_status: " + shippingStatus);
                     System.out.println("  shippingName   : " + shippingName);
