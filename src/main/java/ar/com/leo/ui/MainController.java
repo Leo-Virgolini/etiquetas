@@ -1464,19 +1464,9 @@ public class MainController {
                         int fdContentRemoveEnd = removeEnd - (fdStart + 3);
                         String remainingText = fdContent.substring(0, fdContentRemoveStart) + fdContent.substring(fdContentRemoveEnd);
 
-                        // Detectar si el texto fue truncado por ML (termina con "...")
-                        boolean isTruncated = remainingText.endsWith(" ...") || remainingText.endsWith("...");
-
-                        // Si termina con "...", quitarlos para posicionar badge SOBRE ellos
-                        String textForPos = remainingText;
-                        if (textForPos.endsWith(" ...")) {
-                            textForPos = textForPos.substring(0, textForPos.length() - 4);
-                        } else if (textForPos.endsWith("...")) {
-                            textForPos = textForPos.substring(0, textForPos.length() - 3);
-                        }
-
                         // Convertir a forma renderizada (hex → char placeholder) para simular word-wrap
-                        String rendered = toRenderedForm(textForPos);
+                        // Usar remainingText completo (con "...") para que el wrap refleje lo que realmente se renderiza
+                        String rendered = toRenderedForm(remainingText);
                         // Factor para word-wrap (ajustado para coincidir con wrapping real de ZPL A0)
                         double wrapCharW = fontW * 0.46;
                         int charsPerLine = Math.max(1, (int) (fbWidth / wrapCharW));
@@ -1501,21 +1491,16 @@ public class MainController {
                             lineNum++;
                         }
 
-                        // Para texto truncado, usar ^FB line count para Y (ML llena todas las líneas)
-                        if (isTruncated && fbLines > 1) {
-                            lineNum = fbLines - 1;
-                        }
-
                         // Badge inline después del texto visible
                         String qtyTextTemp = qty + " u.";
                         int boxWTemp = qtyTextTemp.length() * 13 + 8;
                         double posCharW = fontW * 0.50;
                         int qtyX = textX + (int) (lastLineChars * posCharW) + 16;
 
-                        // Si no cabe en la línea, alinear a la derecha en la misma línea
-                        // (evita colisionar con la línea de detalle/Color debajo)
+                        // Si no cabe en la línea, mover a la siguiente alineado a la izquierda
                         if (qtyX + boxWTemp > textX + fbWidth) {
-                            qtyX = textX + fbWidth - boxWTemp;
+                            qtyX = textX;
+                            lineNum++;
                         }
                         int qtyY = textY + lineNum * fontH;
 
