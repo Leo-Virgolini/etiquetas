@@ -241,8 +241,7 @@ public class TiendaNubeApi {
                     }
                 }
 
-                if (tipoEnvio.contains("LLEGA HOY")) {
-
+                if ("QUALITY / TURBO".equals(tipoEnvio)) {
                     JsonNode shippingAddress = order.path("shipping_address");
                     String domicilio = buildDomicilio(shippingAddress);
                     String localidad = buildLocalidad(shippingAddress);
@@ -260,7 +259,7 @@ public class TiendaNubeApi {
             nextUrl = parseLinkNext(response);
         }
 
-        AppLogger.info("PEDIDOS NUBE (" + label + ") - Órdenes: " + totalOrdenes + " | Etiquetas LLEGA HOY: " + etiquetas.size());
+        AppLogger.info("PEDIDOS NUBE (" + label + ") - Órdenes: " + totalOrdenes + " | Etiquetas QUALITY/TURBO: " + etiquetas.size());
         return new TiendaNubeOrderResult(pedidos, etiquetas, totalOrdenes);
     }
 
@@ -284,22 +283,28 @@ public class TiendaNubeApi {
 
     private static String clasificarEnvio(String shippingName) {
         String snUpper = shippingName != null ? shippingName.toUpperCase() : "";
-        if (snUpper.contains("ENVÍO NUBE") || snUpper.contains("ENVIO NUBE") || snUpper.contains("ZIPPIN")) {
+
+        // Correo: Zipnova, Envío Nube, Zippin
+        if (snUpper.contains("ZIPNOVA") || snUpper.contains("ENVÍO NUBE") || snUpper.contains("ENVIO NUBE") || snUpper.contains("ZIPPIN")) {
             return "CORREO";
         }
-        if (shippingName != null && shippingName.equalsIgnoreCase("Local del Vendedor")) {
+
+        // Retiro en local
+        if (snUpper.contains("LOCAL DE KT GASTRO") || snUpper.contains("LOCAL DEL VENDEDOR")) {
             return "RETIRO";
         }
-        if (snUpper.contains("LLEGA HOY")) {
-            int parenIdx = shippingName.indexOf('(');
-            String clean = (parenIdx > 0 ? shippingName.substring(0, parenIdx).trim() : shippingName.trim()).toUpperCase();
-            if (clean.contains(" - ") && !clean.startsWith("LLEGA HOY")) {
-                String[] parts = clean.split("\\s*-\\s*", 2);
-                clean = parts[1] + " - " + parts[0];
-            }
-            return clean;
+
+        // Interior del país
+        if (snUpper.contains("INTERIOR DEL PA")) {
+            return "TRANSPORTE / CORREO";
         }
-        return "FLEX";
+
+        // Entrega dentro de las 24 hs / Llega Hoy
+        if (snUpper.contains("ENTREGA DENTRO DE LAS 24") || snUpper.contains("LLEGA HOY")) {
+            return "QUALITY / TURBO";
+        }
+
+        return snUpper;
     }
 
     private static String obtenerNombreEnvio(JsonNode order) {

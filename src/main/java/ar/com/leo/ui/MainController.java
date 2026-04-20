@@ -1215,10 +1215,13 @@ public class MainController {
     private static final Pattern FO_PATTERN = Pattern.compile("\\^FO(\\d+),(\\d+)");
     private static final Pattern FONT_PATTERN = Pattern.compile("\\^A0N,(\\d+),(\\d+)");
     private static final Pattern FB_PATTERN = Pattern.compile("\\^FB(\\d+),(\\d+)");
+    private static final Pattern CARROS_SKU_FIELD = Pattern.compile(
+            "(\\^FD[^^]*?SKU:\\s*)(\\d+)([^^]*?)(\\^FS)");
 
     private SortResult injectZplHeaders(SortResult result, ExcelMapping excelMapping) {
         Map<String, String> skuToZone = excelMapping.skuToZone();
         Map<String, String> skuToExtCode = excelMapping.skuToExternalCode();
+        Map<String, ComboProduct> normalizedCombos = loadNormalizedCombos();
         List<SortedLabelGroup> newGroups = new ArrayList<>();
         int labelPosition = 1;
         for (SortedLabelGroup group : result.groups()) {
@@ -1228,6 +1231,10 @@ public class MainController {
             String extCodeText = null;
             if (!"CARROS".equals(zone)) {
                 String extCode = skuToExtCode.getOrDefault(sku, "");
+                if ("COMBOS".equals(zone) && normalizedCombos != null) {
+                    String componentExt = resolveSingleComponentExtCode(sku, normalizedCombos, skuToExtCode);
+                    if (componentExt != null) extCode = componentExt;
+                }
                 extCodeText = "COD.EXT.: " + (extCode.isEmpty() ? "-" : extCode);
             }
             List<ZplLabel> newLabels = new ArrayList<>();
@@ -1238,10 +1245,10 @@ public class MainController {
                 String posText = "#" + labelPosition;
                 int lhIdx = raw.indexOf("^LH");
                 int insertIdx = lhIdx >= 0 ? lhIdx : raw.indexOf("^XA") + 3;
-                // ^LH0,0 resetea el label home a (0,0) para que ^FO use coordenadas absolutas
-                String posField1 = "^FO45,15^A0N,35,35^FD" + posText + "^FS";
-                String posField2 = "^FO46,15^A0N,35,35^FD" + posText + "^FS";
-                String posField3 = "^FO45,16^A0N,35,35^FD" + posText + "^FS";
+                // ^LH0,0 resetea el label home a (0,0) para usar coordenadas absolutas. Y=30 para no ser cortado por el borde superior
+                String posField1 = "^FO45,30^A0N,35,35^FD" + posText + "^FS";
+                String posField2 = "^FO46,30^A0N,35,35^FD" + posText + "^FS";
+                String posField3 = "^FO45,31^A0N,35,35^FD" + posText + "^FS";
                 raw = raw.substring(0, insertIdx) + "^LH0,0\n" + posField1 + "\n" + posField2 + "\n" + posField3 + "\n" + raw.substring(insertIdx);
                 labelPosition++;
 
@@ -1310,8 +1317,10 @@ public class MainController {
                 // Resaltar número de unidad (video inverso) si > 1 y zona no es CARROS ni RETIROS
                 raw = highlightUnitIfNeeded(raw, zone);
                 // Para CARROS con productos listados, resaltar cantidades individuales > 1 (ej: "| 3 u.")
+                // y agregar COD.EXT. inline junto a cada SKU listado
                 if ("CARROS".equals(zone)) {
                     raw = highlightCarrosProductQuantities(raw);
+                    raw = injectCarrosExtCodes(raw, skuToExtCode);
                 }
                 newLabels.add(new ZplLabel(raw, label.sku(), label.productDescription(), label.details(), label.quantity(), label.turbo(), label.orderIds()));
             }
@@ -1536,6 +1545,63 @@ public class MainController {
         }
 
         return sb.toString();
+    }
+
+    private String injectCarrosExtCodes(String rawZpl, Map<String, String> skuToExtCode) {
+        Matcher m = CARROS_SKU_FIELD.matcher(rawZpl);
+        StringBuilder sb = new StringBuilder();
+        while (m.find()) {
+            String prefix = m.group(1);
+            String sku = m.group(2);
+            String suffix = m.group(3);
+            String fsTag = m.group(4);
+            String extCode = skuToExtCode.getOrDefault(sku, "");
+            String ceText = " | COD.EXT.: " + (extCode.isEmpty() ? "-" : extCode);
+            m.appendReplacement(sb, Matcher.quoteReplacement(prefix + sku + suffix + ceText + fsTag));
+        }
+        m.appendTail(sb);
+        return sb.toString();
+    }
+
+    private Map<String, ComboProduct> loadNormalizedCombos() {
+        String comboPath = comboExcelField.getText();
+        if (comboPath == null || comboPath.isBlank()) return null;
+        try {
+            Map<String, ComboProduct> all = comboExcelReader.read(Path.of(comboPath));
+            if (all.isEmpty()) return null;
+            Map<String, ComboProduct> normalized = new LinkedHashMap<>(all);
+            for (var entry : all.entrySet()) {
+                String norm = ZplParser.normalizeSku(entry.getKey());
+                if (norm != null && !norm.startsWith("SKU INVALIDO")) {
+                    normalized.putIfAbsent(norm, entry.getValue());
+                }
+            }
+            return normalized;
+        } catch (Exception e) {
+            AppLogger.warn("Error al leer Excel de combos para COD.EXT.: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private String resolveSingleComponentExtCode(String sku, Map<String, ComboProduct> combos, Map<String, String> skuToExtCode) {
+        ComboProduct combo = combos.get(sku);
+        if (combo == null) {
+            String norm = ZplParser.normalizeSku(sku);
+            if (norm != null && !norm.startsWith("SKU INVALIDO")) {
+                combo = combos.get(norm);
+            }
+        }
+        if (combo == null || combo.componentes().size() != 1) return null;
+        String componentSku = combo.componentes().getFirst().codigoComponente();
+        if (componentSku == null || componentSku.isBlank()) return null;
+        String ext = skuToExtCode.getOrDefault(componentSku, "");
+        if (ext.isEmpty()) {
+            String normComp = ZplParser.normalizeSku(componentSku);
+            if (normComp != null && !normComp.startsWith("SKU INVALIDO")) {
+                ext = skuToExtCode.getOrDefault(normComp, "");
+            }
+        }
+        return ext.isEmpty() ? null : ext;
     }
 
     private int extractQuantityFromLabels(List<ZplLabel> labels) {

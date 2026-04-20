@@ -130,7 +130,7 @@ public class PedidosGenerator {
         AppLogger.success("PEDIDOS -   ML retiro: " + plural(ordenesMLRetiro, "orden", "órdenes"));
         AppLogger.success("PEDIDOS -   KT HOGAR: " + plural(tnHogar.totalOrdenes(), "orden", "órdenes"));
         AppLogger.success("PEDIDOS -   KT GASTRO: " + plural(tnGastro.totalOrdenes(), "orden", "órdenes"));
-        AppLogger.success("PEDIDOS -   Etiquetas LLEGA HOY: " + etiquetasTN.size());
+        AppLogger.success("PEDIDOS -   Etiquetas QUALITY/TURBO: " + etiquetasTN.size());
         AppLogger.success("PEDIDOS - ==============================");
         AppLogger.success("PEDIDOS - Proceso completado. Archivo: " + archivo.getAbsolutePath());
         return archivo;
