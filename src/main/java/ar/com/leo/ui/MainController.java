@@ -8,6 +8,7 @@ import ar.com.leo.etiquetas.model.*;
 import ar.com.leo.etiquetas.parser.ComboProduct;
 import ar.com.leo.etiquetas.parser.ComboExcelReader;
 import ar.com.leo.etiquetas.parser.ExcelMappingReader;
+import ar.com.leo.etiquetas.parser.MedidasExcelManager;
 import ar.com.leo.etiquetas.parser.ZplParser;
 import ar.com.leo.etiquetas.ui.ComboPrintDialog;
 import ar.com.leo.etiquetas.ui.LabelTableRow;
@@ -67,6 +68,17 @@ public class MainController {
     private TextField excelFileField;
     @FXML
     private TextField comboExcelField;
+    @FXML
+    private TextField medidasExcelField;
+    @FXML
+    private CheckBox medidasEnabledCheck;
+    @FXML
+    private Button medidasSelectBtn;
+    @FXML
+    private Label medidasStatusLabel;
+
+    private volatile String medidasUltimoDetalle = "";
+    private volatile boolean medidasUltimoTuvoError = false;
     @FXML
     private VBox excelSelectorsBox;
     @FXML
@@ -181,6 +193,7 @@ public class MainController {
     private final ZplParser zplParser = new ZplParser();
     private final ExcelMappingReader excelReader = new ExcelMappingReader();
     private final ComboExcelReader comboExcelReader = new ComboExcelReader();
+    private final MedidasExcelManager medidasManager = new MedidasExcelManager();
     private final LabelSorter labelSorter = new LabelSorter();
     private final ZplFileSaver fileSaver = new ZplFileSaver();
     private final ZplPrinterService printerService = new ZplPrinterService();
@@ -189,6 +202,8 @@ public class MainController {
 
     private static final String PREF_EXCEL_PATH = "excelFilePath";
     private static final String PREF_COMBO_EXCEL_PATH = "comboExcelFilePath";
+    private static final String PREF_MEDIDAS_EXCEL_PATH = "medidasExcelFilePath";
+    private static final String PREF_MEDIDAS_ENABLED = "medidasEnabled";
     private static final String PREF_ZPL_DIR = "zplLastDir";
 
     private boolean meliInitialized = false;
@@ -408,6 +423,24 @@ public class MainController {
             comboExcelField.setText(savedComboPath);
         }
 
+        String savedMedidasPath = prefs.get(PREF_MEDIDAS_EXCEL_PATH, "");
+        if (!savedMedidasPath.isBlank()) {
+            medidasExcelField.setText(savedMedidasPath);
+        }
+
+        boolean medidasEnabled = prefs.getBoolean(PREF_MEDIDAS_ENABLED, false);
+        medidasEnabledCheck.setSelected(medidasEnabled);
+        medidasExcelField.setDisable(!medidasEnabled);
+        medidasSelectBtn.setDisable(!medidasEnabled);
+        actualizarTextoBotonDescarga(medidasEnabled);
+        medidasEnabledCheck.selectedProperty().addListener((obs, oldVal, newVal) -> {
+            boolean on = newVal != null && newVal;
+            prefs.putBoolean(PREF_MEDIDAS_ENABLED, on);
+            medidasExcelField.setDisable(!on);
+            medidasSelectBtn.setDisable(!on);
+            actualizarTextoBotonDescarga(on);
+        });
+
         try {
             meliInitialized = MercadoLibreAPI.inicializar();
             if (meliInitialized) {
@@ -467,6 +500,192 @@ public class MainController {
         }
     }
 
+    @FXML
+    private void onSelectMedidasExcelFile() {
+        FileChooser fc = new FileChooser();
+        fc.setTitle("Seleccionar Excel madre de medidas (ML)");
+        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Excel", "*.xlsx"));
+        String current = medidasExcelField.getText();
+        if (current != null && !current.isBlank()) {
+            File f = new File(current);
+            if (f.getParentFile() != null && f.getParentFile().isDirectory()) {
+                fc.setInitialDirectory(f.getParentFile());
+                fc.setInitialFileName(f.getName());
+            }
+        }
+        File file = fc.showOpenDialog(getWindow());
+        if (file != null) {
+            String path = file.getAbsolutePath();
+            medidasExcelField.setText(path);
+            prefs.put(PREF_MEDIDAS_EXCEL_PATH, path);
+        }
+    }
+
+    /**
+     * Sube en background las medidas pendientes (SUBIDO=NO con +20% completas) a ML.
+     * Dispara automáticamente después de procesar etiquetas si el check de medidas ML está activo.
+     * Silencioso: no bloquea la UI, no abre diálogos. Loguea a AppLogger y marca SUBIDO=SI en el Excel.
+     */
+    private void subirMedidasPendientesAsync(String path) {
+        if (path == null || path.isBlank()) return;
+        if (medidasEnabledCheck == null || !medidasEnabledCheck.isSelected()) return;
+        if (!meliInitialized) {
+            setMedidasStatus("⚠ ML no inicializado", "-fx-text-fill: #b45309;", "ML no está inicializado. Inicie sesión en MercadoLibre para subir medidas.");
+            return;
+        }
+
+        new Thread(() -> {
+            Map<String, ar.com.leo.etiquetas.model.MedidaSku> medidas;
+            try {
+                medidas = medidasManager.leerMedidas(Path.of(path));
+            } catch (Exception e) {
+                setMedidasStatus("⚠ Error leyendo Excel", "-fx-text-fill: #b91c1c;", "No se pudo leer el Excel de medidas: " + e.getMessage());
+                return;
+            }
+
+            List<ar.com.leo.etiquetas.model.MedidaSku> aSubir = medidas.values().stream()
+                    .filter(m -> !m.subido())
+                    .filter(ar.com.leo.etiquetas.model.MedidaSku::tieneMedidasParaSubir)
+                    .toList();
+            if (aSubir.isEmpty()) {
+                setMedidasStatus("✓ Sin pendientes", "-fx-text-fill: #15803d;", "No hay SKUs con medidas +20% completas pendientes de subir.");
+                return;
+            }
+
+            String userId;
+            try {
+                userId = MercadoLibreAPI.getUserId();
+            } catch (Exception e) {
+                setMedidasStatus("⚠ Error ML", "-fx-text-fill: #b91c1c;", "No se pudo obtener userId: " + e.getMessage());
+                return;
+            }
+
+            final int total = aSubir.size();
+            StringBuilder detalles = new StringBuilder();
+            detalles.append("Subida de ").append(total).append(" SKU(s) pendientes:\n\n");
+            List<String> ok = new ArrayList<>();
+            Map<String, String> errores = new LinkedHashMap<>();
+            int procesados = 0;
+            setMedidasStatus("⏳ Subiendo 0/" + total, "-fx-text-fill: #1d4ed8;", detalles.toString());
+
+            for (ar.com.leo.etiquetas.model.MedidaSku m : aSubir) {
+                try {
+                    MercadoLibreAPI.UploadResult r = MercadoLibreAPI.actualizarDimensionesPaquete(
+                            userId, m.sku(),
+                            m.anchoMasCm(), m.altoMasCm(), m.profundidadMasCm(), m.pesoMasKg());
+                    if (r.ok()) {
+                        ok.add(m.sku());
+                        detalles.append("✓ ").append(m.sku()).append(" (item ").append(r.itemId()).append(")\n");
+                    } else {
+                        errores.put(m.sku(), r.mensaje());
+                        detalles.append("✗ ").append(m.sku()).append(" → ").append(r.mensaje()).append("\n");
+                    }
+                } catch (Exception e) {
+                    String msg = "Excepción: " + e.getMessage();
+                    errores.put(m.sku(), msg);
+                    detalles.append("✗ ").append(m.sku()).append(" → ").append(msg).append("\n");
+                }
+                procesados++;
+                final int p = procesados;
+                final int f = errores.size();
+                final int o = ok.size();
+                final String snap = detalles.toString();
+                Platform.runLater(() -> {
+                    medidasUltimoDetalle = snap;
+                    medidasStatusLabel.setText("⏳ Subiendo " + p + "/" + total
+                            + "  (OK " + o + (f > 0 ? " · FAIL " + f : "") + ")");
+                });
+            }
+
+            try {
+                medidasManager.marcarResultados(Path.of(path), ok, errores);
+            } catch (Exception e) {
+                detalles.append("\n⚠ No se pudo persistir resultados en el Excel: ").append(e.getMessage());
+            }
+
+            final int finalOk = ok.size();
+            final int finalFail = errores.size();
+            detalles.append("\nFinalizado. OK=").append(finalOk).append(" · FAIL=").append(finalFail);
+            final String detalleFinal = detalles.toString();
+
+            Platform.runLater(() -> {
+                medidasUltimoDetalle = detalleFinal;
+                medidasUltimoTuvoError = finalFail > 0;
+                if (finalFail == 0) {
+                    medidasStatusLabel.setGraphic(null);
+                    medidasStatusLabel.setText("✓ " + finalOk + " subido" + (finalOk == 1 ? "" : "s") + " a ML (click para detalles)");
+                    medidasStatusLabel.setStyle("-fx-font-size: 12px; -fx-cursor: hand; -fx-text-fill: #15803d; -fx-font-weight: bold;");
+                } else {
+                    medidasStatusLabel.setGraphic(crearIconoAdvertencia());
+                    medidasStatusLabel.setText(finalOk + " OK · " + finalFail + " FAIL (click para detalles)");
+                    medidasStatusLabel.setStyle("-fx-font-size: 12px; -fx-cursor: hand; -fx-text-fill: #b91c1c; -fx-font-weight: bold;");
+                }
+                // Auto-abrir diálogo al finalizar la subida (errores en rojo, éxito normal).
+                if (finalFail > 0) {
+                    AlertHelper.showErrorScrollable("Subida de medidas a ML", detalleFinal);
+                } else {
+                    AlertHelper.showInfoScrollable("Subida de medidas a ML", detalleFinal);
+                }
+            });
+        }, "subir-medidas-ml").start();
+    }
+
+    private void actualizarTextoBotonDescarga(boolean medidasOn) {
+        if (downloadLabelsBtn == null) return;
+        downloadLabelsBtn.setText(medidasOn
+                ? "📥 Paso 2: Descargar Etiquetas y Subir Medidas"
+                : "📥 Paso 2: Descargar Etiquetas");
+    }
+
+    /**
+     * Cuenta cuántas filas del Excel de medidas están listas para subir a ML
+     * (SUBIDO=NO y las 4 columnas +20% completas). Devuelve 0 si el checkbox está off
+     * o si no se puede leer el archivo.
+     */
+    private int contarMedidasPendientesParaSubir() {
+        if (medidasEnabledCheck == null || !medidasEnabledCheck.isSelected()) return 0;
+        String path = medidasExcelField == null ? null : medidasExcelField.getText();
+        if (path == null || path.isBlank()) return 0;
+        try {
+            Map<String, ar.com.leo.etiquetas.model.MedidaSku> medidas = medidasManager.leerMedidas(Path.of(path));
+            return (int) medidas.values().stream()
+                    .filter(m -> !m.subido())
+                    .filter(ar.com.leo.etiquetas.model.MedidaSku::tieneMedidasParaSubir)
+                    .count();
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private javafx.scene.image.ImageView crearIconoAdvertencia() {
+        javafx.scene.image.Image img = new javafx.scene.image.Image(
+                getClass().getResourceAsStream("/ar/com/leo/ui/icons8-señal-de-advertencia-general-100.png"),
+                20, 20, true, true);
+        return new javafx.scene.image.ImageView(img);
+    }
+
+    private void setMedidasStatus(String text, String colorStyle, String detalle) {
+        // true si el color indica error (rojo/amarillo) — simple heurística para decidir el ícono.
+        boolean esWarn = colorStyle != null && (colorStyle.contains("#b91c1c") || colorStyle.contains("#b45309"));
+        Platform.runLater(() -> {
+            medidasUltimoDetalle = detalle;
+            medidasUltimoTuvoError = esWarn;
+            medidasStatusLabel.setGraphic(esWarn ? crearIconoAdvertencia() : null);
+            medidasStatusLabel.setText(text);
+            medidasStatusLabel.setStyle("-fx-font-size: 12px; -fx-cursor: hand; " + colorStyle + " -fx-font-weight: bold;");
+        });
+    }
+
+    @FXML
+    private void onMedidasStatusClicked() {
+        if (medidasUltimoDetalle == null || medidasUltimoDetalle.isBlank()) return;
+        if (medidasUltimoTuvoError) {
+            AlertHelper.showErrorScrollable("Subida de medidas a ML", medidasUltimoDetalle);
+        } else {
+            AlertHelper.showInfoScrollable("Subida de medidas a ML", medidasUltimoDetalle);
+        }
+    }
+
     private void validateExcelFiles() {
         String excelPath = excelFileField.getText();
         if (excelPath == null || excelPath.isBlank()) {
@@ -475,6 +694,13 @@ public class MainController {
         String comboPath = comboExcelField.getText();
         if (comboPath == null || comboPath.isBlank()) {
             throw new IllegalArgumentException("Seleccione el archivo Excel de composición de combos.");
+        }
+        if (medidasEnabledCheck.isSelected()) {
+            String medidasPath = medidasExcelField.getText();
+            if (medidasPath == null || medidasPath.isBlank()) {
+                throw new IllegalArgumentException(
+                        "Habilitó 'medidas ML' pero no seleccionó archivo. Elija uno (si no existe se crea automáticamente) o desmarque el checkbox.");
+            }
         }
     }
 
@@ -494,8 +720,11 @@ public class MainController {
         try {
             ExcelMapping excelMapping = loadExcelMapping();
             List<ZplLabel> labels = zplParser.parseFile(Path.of(zplPath));
+            Map<String, ar.com.leo.etiquetas.model.MedidaSku> medidas = loadMedidasMap();
+            Map<String, String> skusPendientes = new LinkedHashMap<>();
             currentResult = injectZplHeaders(
-                    labelSorter.sort(labels, excelMapping.skuToZone()), excelMapping);
+                    labelSorter.sort(labels, excelMapping.skuToZone()), excelMapping, medidas, skusPendientes);
+            guardarSkusPendientesMedicion(skusPendientes);
             showLabelTable();
             displayResult(currentResult);
         } catch (Exception e) {
@@ -669,10 +898,18 @@ public class MainController {
         confirm.setHeaderText("Se descargarán " + totalEtiquetas + " etiqueta(s)");
         boolean hayPendientes = seleccionadas.stream()
                 .anyMatch(o -> "ready_to_print".equals(o.getShippingSubstatus()));
-        String advertencia = hayPendientes
-                ? "Al descargar, el estado de las órdenes pendientes pasará a \"Impresa\" en MercadoLibre.\n\n¿Desea continuar?"
-                : "¿Desea continuar?";
-        confirm.setContentText(advertencia);
+        StringBuilder advertencia = new StringBuilder();
+        if (hayPendientes) {
+            advertencia.append("Al descargar, el estado de las órdenes pendientes pasará a \"Impresa\" en MercadoLibre.\n\n");
+        }
+        int skusParaSubir = contarMedidasPendientesParaSubir();
+        if (skusParaSubir > 0) {
+            advertencia.append("También se subirán a ML las medidas de ").append(skusParaSubir).append(" SKU(s) cargadas en el Excel.\n\n");
+        } else if (medidasEnabledCheck != null && medidasEnabledCheck.isSelected()) {
+            advertencia.append("No hay medidas pendientes para subir a ML.\n\n");
+        }
+        advertencia.append("¿Desea continuar?");
+        confirm.setContentText(advertencia.toString());
         confirm.setGraphic(new javafx.scene.image.ImageView(
                 new javafx.scene.image.Image(getClass().getResourceAsStream("/ar/com/leo/ui/icons8-señal-de-advertencia-general-100.png"), 48, 48, true, true)));
         ((javafx.stage.Stage) confirm.getDialogPane().getScene().getWindow()).getIcons().add(
@@ -680,13 +917,19 @@ public class MainController {
         Optional<ButtonType> confirmResult = confirm.showAndWait();
         if (confirmResult.isEmpty() || confirmResult.get() != ButtonType.OK) return;
 
+        // Capturar referencias/paths en el hilo UI antes de lanzar el thread background.
+        final Map<String, ar.com.leo.etiquetas.model.MedidaSku> medidas = loadMedidasMap();
+        final String medidasPath = medidasExcelField != null ? medidasExcelField.getText() : null;
+
         setLoading(true);
 
         new Thread(() -> {
             try {
                 List<ZplLabel> labels = MercadoLibreAPI.descargarEtiquetasZplParaOrdenes(seleccionadas, turboShipmentIds);
+                Map<String, String> skusPendientes = new LinkedHashMap<>();
                 SortResult result = injectZplHeaders(
-                        labelSorter.sort(labels, excelMapping.skuToZone()), excelMapping);
+                        labelSorter.sort(labels, excelMapping.skuToZone()), excelMapping, medidas, skusPendientes);
+                guardarSkusPendientesMedicion(skusPendientes, medidasPath);
 
                 // Guardar automáticamente en carpeta "Etiquetas"
                 String saveError = null;
@@ -1219,6 +1462,12 @@ public class MainController {
             "(\\^FD[^^]*?SKU:\\s*)(\\d+)([^^]*?)(\\^FS)");
 
     private SortResult injectZplHeaders(SortResult result, ExcelMapping excelMapping) {
+        return injectZplHeaders(result, excelMapping, loadMedidasMap(), new LinkedHashMap<>());
+    }
+
+    private SortResult injectZplHeaders(SortResult result, ExcelMapping excelMapping,
+                                        Map<String, ar.com.leo.etiquetas.model.MedidaSku> medidas,
+                                        Map<String, String> skusPendientesOut) {
         Map<String, String> skuToZone = excelMapping.skuToZone();
         Map<String, String> skuToExtCode = excelMapping.skuToExternalCode();
         Map<String, ComboProduct> normalizedCombos = loadNormalizedCombos();
@@ -1231,15 +1480,33 @@ public class MainController {
             String extCodeText = null;
             if (!"CARROS".equals(zone)) {
                 String extCode = skuToExtCode.getOrDefault(sku, "");
-                if ("COMBOS".equals(zone) && normalizedCombos != null) {
+                // Fallback: si el SKU es un combo con un solo componente, usar el COD.EXT.
+                // del componente. Aplica a cualquier zona (el combo puede estar mapeado
+                // a J*, T*, COMBOS, etc. en el Excel de stock).
+                if (normalizedCombos != null) {
                     String componentExt = resolveSingleComponentExtCode(sku, normalizedCombos, skuToExtCode);
                     if (componentExt != null) extCode = componentExt;
                 }
                 extCodeText = "COD.EXT.: " + (extCode.isEmpty() ? "-" : extCode);
             }
+
+            // Detectar si el SKU individual está pendiente de medición (MEDIR tag).
+            // Solo aplica a productos individuales (no CARROS) con SKU numérico válido,
+            // y solo se marca/guarda cuando el pedido es de 1 unidad (se evalúa por etiqueta).
+            boolean skuPendienteMedicion = false;
+            if (medidas != null && !"CARROS".equals(zone) && sku != null && !sku.isBlank()
+                    && !sku.contains("\n") && sku.matches("\\d+")) {
+                ar.com.leo.etiquetas.model.MedidaSku m = medidas.get(sku);
+                skuPendienteMedicion = (m == null || !m.estaMedido());
+            }
+
             List<ZplLabel> newLabels = new ArrayList<>();
             for (ZplLabel label : group.labels()) {
                 String raw = label.rawZpl();
+                boolean necesitaMedir = skuPendienteMedicion && label.quantity() == 1;
+                if (necesitaMedir) {
+                    skusPendientesOut.putIfAbsent(sku, group.productDescription() != null ? group.productDescription() : "");
+                }
                 // Inyectar número de posición (#1, #2, ...) arriba a la izquierda en negrita
                 // Se inserta antes de ^LH (si existe) para que use coordenadas absolutas (top-left del label)
                 String posText = "#" + labelPosition;
@@ -1249,7 +1516,16 @@ public class MainController {
                 String posField1 = "^FO45,30^A0N,35,35^FD" + posText + "^FS";
                 String posField2 = "^FO46,30^A0N,35,35^FD" + posText + "^FS";
                 String posField3 = "^FO45,31^A0N,35,35^FD" + posText + "^FS";
-                raw = raw.substring(0, insertIdx) + "^LH0,0\n" + posField1 + "\n" + posField2 + "\n" + posField3 + "\n" + raw.substring(insertIdx);
+                String medirPrefix = "";
+                if (necesitaMedir) {
+                    // Banner MEDIR: [SKU] en video inverso (blanco sobre negro), bien visible.
+                    // Se ubica a la derecha del #X (x>=180) para no taparlo.
+                    String medirText = "MEDIR: " + sku;
+                    medirPrefix =
+                            "^FO200,15^GB580,65,65^FS\n"
+                            + "^FO200,22^A0N,50,50^FB580,1,0,C^FR^FD" + medirText + "^FS\n";
+                }
+                raw = raw.substring(0, insertIdx) + "^LH0,0\n" + posField1 + "\n" + posField2 + "\n" + posField3 + "\n" + medirPrefix + raw.substring(insertIdx);
                 labelPosition++;
 
                 // Parsear ^LH original para convertir coordenadas relativas a absolutas
@@ -1561,6 +1837,39 @@ public class MainController {
         }
         m.appendTail(sb);
         return sb.toString();
+    }
+
+    private Map<String, ar.com.leo.etiquetas.model.MedidaSku> loadMedidasMap() {
+        if (medidasEnabledCheck == null || !medidasEnabledCheck.isSelected()) return null;
+        String path = medidasExcelField == null ? null : medidasExcelField.getText();
+        if (path == null || path.isBlank()) return null;
+        try {
+            return medidasManager.leerMedidas(Path.of(path));
+        } catch (Exception e) {
+            AppLogger.warn("No se pudo leer el Excel de medidas: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private void guardarSkusPendientesMedicion(Map<String, String> skusPendientes) {
+        if (medidasEnabledCheck == null || !medidasEnabledCheck.isSelected()) return;
+        String path = medidasExcelField == null ? null : medidasExcelField.getText();
+        guardarSkusPendientesMedicion(skusPendientes, path);
+    }
+
+    private void guardarSkusPendientesMedicion(Map<String, String> skusPendientes, String path) {
+        if (path == null || path.isBlank()) return;
+        try {
+            if (skusPendientes != null && !skusPendientes.isEmpty()) {
+                int agregados = medidasManager.agregarPendientes(Path.of(path), skusPendientes.keySet(), skusPendientes);
+                if (agregados > 0) {
+                    AppLogger.info("MEDIDAS - " + agregados + " SKU(s) pendientes agregados al Excel madre.");
+                }
+            }
+        } catch (Exception e) {
+            AppLogger.warn("No se pudo actualizar el Excel de medidas: " + e.getMessage());
+        }
+        subirMedidasPendientesAsync(path);
     }
 
     private Map<String, ComboProduct> loadNormalizedCombos() {

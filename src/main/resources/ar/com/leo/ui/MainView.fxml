@@ -27,6 +27,13 @@
                                promptText="Composición de combos (.xls/.xlsx)"/>
                     <Button text="&#x1F4C2; Seleccionar" onAction="#onSelectComboExcelFile"/>
                 </HBox>
+                <HBox spacing="10" alignment="CENTER_LEFT" style="-fx-padding: 12 15 12 15; -fx-background-color: #f0f0f0; -fx-border-color: #ddd; -fx-border-width: 0 0 1 0;">
+                    <CheckBox fx:id="medidasEnabledCheck" text="&#x1F4CF; Archivo Excel (medidas ML):" style="-fx-font-weight: bold;"/>
+                    <TextField fx:id="medidasExcelField" HBox.hgrow="ALWAYS" editable="false"
+                               promptText="Medidas de embalaje por SKU (.xlsx)"/>
+                    <Button fx:id="medidasSelectBtn" text="&#x1F4C2; Seleccionar" onAction="#onSelectMedidasExcelFile"/>
+                    <Label fx:id="medidasStatusLabel" text="" style="-fx-font-size: 12px; -fx-cursor: hand;" onMouseClicked="#onMedidasStatusClicked"/>
+                </HBox>
             </VBox>
 
             <TabPane fx:id="tabPane" VBox.vgrow="ALWAYS" tabMinWidth="120" tabMaxWidth="300">

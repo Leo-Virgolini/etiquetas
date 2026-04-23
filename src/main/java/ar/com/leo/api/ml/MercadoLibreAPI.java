@@ -788,6 +788,111 @@ public class MercadoLibreAPI {
     }
 
     // -----------------------------------------------------------------------------------------------------------------
+    // DIMENSIONES DE PAQUETE (ME2)
+    // -----------------------------------------------------------------------------------------------------------------
+
+    /**
+     * Resuelve SKU → item_id consultando por seller_sku y sku como fallback.
+     * Devuelve null si ningún item matchea.
+     */
+    public static String buscarItemIdPorSku(String userId, String sku) {
+        verificarTokens();
+        String encoded = URLEncoder.encode(sku, StandardCharsets.UTF_8);
+        String itemId = buscarItemPorSkuParam(userId, encoded, "seller_sku");
+        if (itemId == null) {
+            itemId = buscarItemPorSkuParam(userId, encoded, "sku");
+        }
+        return itemId;
+    }
+
+    public record UploadResult(boolean ok, String itemId, String mensaje) {
+    }
+
+    /**
+     * Actualiza los atributos SELLER_PACKAGE_* del item. ML exige enteros, cm para dimensiones, g para peso.
+     * Entrada: cm y kg (se convierten internamente).
+     */
+    public static UploadResult actualizarDimensionesPaquete(String userId, String sku,
+                                                            double anchoCm, double altoCm,
+                                                            double profundidadCm, double pesoKg) {
+        verificarTokens();
+
+        String itemId = buscarItemIdPorSku(userId, sku);
+        if (itemId == null) {
+            return new UploadResult(false, null, "No se encontró item_id para SKU " + sku);
+        }
+
+        int anchoEntero = (int) Math.round(anchoCm);
+        int altoEntero = (int) Math.round(altoCm);
+        int largoEntero = (int) Math.round(profundidadCm);
+        int pesoGramos = (int) Math.round(pesoKg * 1000.0);
+
+        if (anchoEntero <= 0 || altoEntero <= 0 || largoEntero <= 0 || pesoGramos <= 0) {
+            return new UploadResult(false, itemId, "Medidas inválidas (enteros > 0 requeridos): "
+                    + anchoEntero + "x" + altoEntero + "x" + largoEntero + " cm, " + pesoGramos + " g");
+        }
+
+        String body = String.format(Locale.ROOT,
+                "{\"attributes\":["
+                        + "{\"id\":\"SELLER_PACKAGE_WIDTH\",\"value_name\":\"%d cm\"},"
+                        + "{\"id\":\"SELLER_PACKAGE_HEIGHT\",\"value_name\":\"%d cm\"},"
+                        + "{\"id\":\"SELLER_PACKAGE_LENGTH\",\"value_name\":\"%d cm\"},"
+                        + "{\"id\":\"SELLER_PACKAGE_WEIGHT\",\"value_name\":\"%d g\"}"
+                        + "]}",
+                anchoEntero, altoEntero, largoEntero, pesoGramos);
+
+        Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
+                .uri(URI.create("https://api.mercadolibre.com/items/" + itemId))
+                .header("Authorization", "Bearer " + tokens.accessToken)
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build();
+
+        HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
+        if (response == null) {
+            return new UploadResult(false, itemId, "Sin respuesta de ML");
+        }
+        int status = response.statusCode();
+        if (status == 200 || status == 201) {
+            return new UploadResult(true, itemId, "OK");
+        }
+        return new UploadResult(false, itemId, extraerMensajeError(status, response.body()));
+    }
+
+    /**
+     * Convierte la respuesta de error de ML en un mensaje legible y corto.
+     * Ejemplo de entrada:
+     *   {"message":"Validation error","error":"validation_error","status":400,
+     *    "cause":[{"cause_id":5401,"code":"item.attribute.invalid...",
+     *              "message":"The packaging attributes [seller_package_height] are too small..."}]}
+     * Salida: "HTTP 400 · 5401 · The packaging attributes [seller_package_height] are too small..."
+     */
+    private static String extraerMensajeError(int status, String body) {
+        String prefix = "HTTP " + status;
+        if (body == null || body.isBlank()) return prefix;
+        try {
+            JsonNode root = mapper.readTree(body);
+            JsonNode cause = root.path("cause");
+            if (cause.isArray() && !cause.isEmpty()) {
+                JsonNode first = cause.get(0);
+                String causeId = first.path("cause_id").asString("");
+                String causeMsg = first.path("message").asString("");
+                if (!causeMsg.isBlank()) {
+                    return causeId.isBlank()
+                            ? prefix + " · " + causeMsg
+                            : prefix + " · " + causeId + " · " + causeMsg;
+                }
+            }
+            String topMsg = root.path("message").asString("");
+            if (!topMsg.isBlank()) return prefix + " · " + topMsg;
+        } catch (Exception ignored) {
+            // Cuerpo no-JSON: caemos al fallback.
+        }
+        return prefix + ": " + body;
+    }
+
+    // -----------------------------------------------------------------------------------------------------------------
     // SLA
     // -----------------------------------------------------------------------------------------------------------------
 

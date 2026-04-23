@@ -4,10 +4,34 @@ Aplicacion de escritorio JavaFX para gestionar despachos de e-commerce: generaci
 
 ## Configuracion global
 
-Dos selectores de archivo persistentes (guardados en `Preferences`) disponibles en todas las pestañas:
+Tres selectores de archivo persistentes (guardados en `Preferences`) disponibles en todas las pestañas:
 
 - **Excel de stock** (`Stock.xlsx`): mapea SKU a zona de almacen (J1, J2, T1, T2, etc.) y opcionalmente codigo externo. Lee desde fila 3 las columnas "Codigo Producto", "Unidad" y "Codigo Externo".
 - **Excel de combos**: define productos compuestos y sus componentes. Columnas: "Codigo Compuesto", "Codigo Componente", "Cantidad".
+- **Excel de medidas ML** (opcional, se activa con checkbox): base "madre" de medidas de embalaje por SKU, usada para marcar etiquetas pendientes de medir y para cargar las dimensiones de paquete en ML (atributos `SELLER_PACKAGE_*`). 12 columnas en fila 1:
+
+  | # | Columna | Uso |
+  |---|---|---|
+  | 0 | `SKU` | Clave. |
+  | 1 | `PRODUCTO` | Descripcion. Se auto-rellena con la descripcion del ZPL. |
+  | 2 | `Ancho cm` | Medida real (base). |
+  | 3 | `Alto cm` | Medida real (base). |
+  | 4 | `Profundidad cm` | Medida real (base). |
+  | 5 | `Peso físico (empaque + producto) kg` | Medida real (base). |
+  | 6 | `Ancho +20%` | Valor que se sube a ML. |
+  | 7 | `Alto +20%` | Valor que se sube a ML. |
+  | 8 | `Profunidad +20%` | Valor que se sube a ML. |
+  | 9 | `Peso físico (empaque + producto) +20%` | Valor que se sube a ML. |
+  | 10 | `SUBIDO` | `NO` al agregar (rojo tenue), `SI` al subir OK (verde tenue). |
+  | 11 | `ERROR` | Mensaje de ML en rojo cuando falla la subida. Se limpia al pasar a `SUBIDO=SI` en un reintento exitoso. |
+
+  - Las 4 columnas base cm/kg son los valores reales medidos por el deposito. Las `+20%` son los valores efectivos declarados a ML (margen por variaciones de armado).
+  - Si el archivo no existe se crea automaticamente con headers en la primera ejecucion. Los SKUs nuevos se appendean al final con celdas faltantes en amarillo y `SUBIDO=NO`.
+  - El lector tolera variantes: "Largo" o "Profundidad", espacios y saltos de linea dentro del header, y el typo "Profunidad" en la columna +20%.
+  - Si el archivo existente no tiene columna `ERROR`, se agrega automaticamente en la primera escritura (migracion silenciosa).
+  - Con el checkbox desactivado se saltea el marcado MEDIR y la subida a ML.
+  - Escritura serializada con lock interno y reintentos con backoff (500/1000/1500/2000 ms) si el archivo esta abierto en Excel (sharing violation).
+  - Los decimales con coma ("3,006" = 3.006 kg) se leen correctamente tanto si la celda es numerica (POI devuelve el valor crudo) como si es texto (se normaliza `,` → `.`).
 
 ## Funcionalidades
 
@@ -56,6 +80,20 @@ Dos sub-pestañas para obtener etiquetas ZPL, procesarlas y enviarlas a la impre
 - **Interleave para impresion**: reordena las etiquetas para compensar el plegado en acordeon de la impresora termica, de modo que al cortar el stack queden en orden.
 - **Impresion directa**: dialog de seleccion de zonas a imprimir + seleccion de impresora. Envia ZPL crudo via `javax.print`.
 - **Combos**: muestra desglose de productos compuestos presentes en el lote para facilitar el armado.
+- **Marcado MEDIR y subida automatica a ML**: si esta configurado el Excel de medidas, al procesar un lote de etiquetas se disparan tres acciones:
+  1. **Banner MEDIR en la etiqueta**: cada etiqueta individual (no CARROS) con SKU numerico, **de pedido de 1 unidad**, cuyo SKU no tenga las 4 columnas base cm/kg cargadas, recibe un banner "MEDIR: [SKU]" en negro invertido sobre el encabezado. Las ordenes de 2+ unidades no se marcan (esos embalajes se miden aparte).
+  2. **Autocarga al Excel**: los SKU detectados como pendientes se agregan al final del Excel con la descripcion del producto pre-rellenada, celdas de medidas en amarillo tenue y `SUBIDO=NO`. No se duplican si ya existen.
+  3. **Subida automatica a ML** (thread de background, sin bloquear la UI): recorre el Excel, filtra filas con `SUBIDO=NO` **y** las 4 columnas `+20%` completas, y para cada una:
+     - Resuelve `SKU → item_id` via `GET /users/{uid}/items/search?seller_sku=...` con fallback a `?sku=...`.
+     - Hace `PUT /items/{item_id}` con body `{"attributes":[...]}` y los 4 atributos `SELLER_PACKAGE_WIDTH`, `SELLER_PACKAGE_HEIGHT`, `SELLER_PACKAGE_LENGTH`, `SELLER_PACKAGE_WEIGHT`. Formato requerido por ML: enteros, `cm` para dimensiones, `g` para peso. El codigo convierte `kg × 1000 → g` y redondea con `Math.round` (evita sesgo de truncado y el ruido de floats de Excel).
+     - Si HTTP 200/201, marca `SUBIDO=SI` en verde tenue y limpia la celda `ERROR`. Si falla, deja `SUBIDO=NO` (rojo) y escribe el mensaje parseado en la columna `ERROR` (rojo oscuro sobre rosa palido, con wrap).
+     - Parseo del error: del JSON de ML se extrae `cause[0].cause_id` + `cause[0].message` para dejar un mensaje legible (ej: `HTTP 400 · 5401 · The packaging attributes [seller_package_height] are too small for...`). Si no es JSON, se usa el body crudo.
+  - **UI del Paso 2**:
+     - El texto del boton "Descargar Etiquetas" cambia a "Descargar Etiquetas y Subir Medidas" cuando el checkbox esta activo.
+     - El dialogo de confirmacion muestra cuantas medidas pendientes hay para subir ("Se subiran a ML las medidas de N SKU(s) cargadas en el Excel").
+     - Un label al lado del selector del Excel muestra el progreso en vivo (`Subiendo 2/5 (OK 1 · FAIL 1)`) y al finalizar resume con icono verde o rojo.
+     - El dialogo con el detalle por SKU se abre automaticamente al finalizar la subida: estilo `ERROR` (icono rojo, texto rojo oscuro monospace) si hubo fallas, `INFORMATION` si fue todo OK. Se puede reabrir haciendo click en el label de estado.
+  - Los atributos `SELLER_PACKAGE_*` son los que documenta ML para cuentas ME2 (obligatorios para `cross_docking`/`xd_drop_off`, aceptados en el resto).
 
 ### Pedidos
 
@@ -88,7 +126,7 @@ Todas las hojas: A4 portrait, margenes estrechos, page breaks inteligentes basad
 
 | Servicio | Uso | Credenciales |
 |---|---|---|
-| **MercadoLibre** | Ordenes ME2, etiquetas ZPL, SLA | `ml_credentials.json`, `ml_tokens.json` |
+| **MercadoLibre** | Ordenes ME2, etiquetas ZPL, SLA, atributos `SELLER_PACKAGE_*` (dimensiones de paquete) | `ml_credentials.json`, `ml_tokens.json` |
 | **Tienda Nube** | Pedidos KT HOGAR y KT GASTRO | `nube_tokens.json` |
 | **DUX ERP** | Stock, descripciones, proveedores | `dux_tokens.json` |
 
