@@ -14,6 +14,8 @@ import javafx.scene.control.TextInputDialog;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -811,6 +813,11 @@ public class MercadoLibreAPI {
     /**
      * Actualiza los atributos SELLER_PACKAGE_* del item. ML exige enteros, cm para dimensiones, g para peso.
      * Entrada: cm y kg (se convierten internamente).
+     *
+     * Según la doc de ML, los SELLER_PACKAGE_* se declaran SIEMPRE a nivel ítem (no por variación).
+     * El ejemplo de la doc los muestra a nivel top sin wrapper variations, y esos atributos no están
+     * marcados como variation_attribute en ninguna categoría. Por eso hacemos siempre PUT a nivel ítem.
+     * Consecuencia: si el MLA tiene variaciones con distintos embalajes, todas comparten estas medidas.
      */
     public static UploadResult actualizarDimensionesPaquete(String userId, String sku,
                                                             double anchoCm, double altoCm,
@@ -832,24 +839,8 @@ public class MercadoLibreAPI {
                     + anchoEntero + "x" + altoEntero + "x" + largoEntero + " cm, " + pesoGramos + " g");
         }
 
-        String body = String.format(Locale.ROOT,
-                "{\"attributes\":["
-                        + "{\"id\":\"SELLER_PACKAGE_WIDTH\",\"value_name\":\"%d cm\"},"
-                        + "{\"id\":\"SELLER_PACKAGE_HEIGHT\",\"value_name\":\"%d cm\"},"
-                        + "{\"id\":\"SELLER_PACKAGE_LENGTH\",\"value_name\":\"%d cm\"},"
-                        + "{\"id\":\"SELLER_PACKAGE_WEIGHT\",\"value_name\":\"%d g\"}"
-                        + "]}",
-                anchoEntero, altoEntero, largoEntero, pesoGramos);
-
-        Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
-                .uri(URI.create("https://api.mercadolibre.com/items/" + itemId))
-                .header("Authorization", "Bearer " + tokens.accessToken)
-                .header("Content-Type", "application/json")
-                .header("Accept", "application/json")
-                .PUT(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-                .build();
-
-        HttpResponse<String> response = retryHandler.sendWithRetry(requestBuilder);
+        String body = bodyAtributosNivelItem(anchoEntero, altoEntero, largoEntero, pesoGramos);
+        HttpResponse<String> response = ejecutarPut(itemId, body);
         if (response == null) {
             return new UploadResult(false, itemId, "Sin respuesta de ML");
         }
@@ -858,6 +849,27 @@ public class MercadoLibreAPI {
             return new UploadResult(true, itemId, "OK");
         }
         return new UploadResult(false, itemId, extraerMensajeError(status, response.body()));
+    }
+
+    private static HttpResponse<String> ejecutarPut(String itemId, String body) {
+        Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
+                .uri(URI.create("https://api.mercadolibre.com/items/" + itemId))
+                .header("Authorization", "Bearer " + tokens.accessToken)
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build();
+        return retryHandler.sendWithRetry(requestBuilder);
+    }
+
+    private static String bodyAtributosNivelItem(int anchoCm, int altoCm, int largoCm, int pesoGramos) {
+        ObjectNode root = mapper.createObjectNode();
+        ArrayNode attrs = root.putArray("attributes");
+        attrs.addObject().put("id", "SELLER_PACKAGE_WIDTH").put("value_name", anchoCm + " cm");
+        attrs.addObject().put("id", "SELLER_PACKAGE_HEIGHT").put("value_name", altoCm + " cm");
+        attrs.addObject().put("id", "SELLER_PACKAGE_LENGTH").put("value_name", largoCm + " cm");
+        attrs.addObject().put("id", "SELLER_PACKAGE_WEIGHT").put("value_name", pesoGramos + " g");
+        return root.toString();
     }
 
     /**

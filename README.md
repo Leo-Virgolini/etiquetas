@@ -94,6 +94,8 @@ Dos sub-pestañas para obtener etiquetas ZPL, procesarlas y enviarlas a la impre
      - Un label al lado del selector del Excel muestra el progreso en vivo (`Subiendo 2/5 (OK 1 · FAIL 1)`) y al finalizar resume con icono verde o rojo.
      - El dialogo con el detalle por SKU se abre automaticamente al finalizar la subida: estilo `ERROR` (icono rojo, texto rojo oscuro monospace) si hubo fallas, `INFORMATION` si fue todo OK. Se puede reabrir haciendo click en el label de estado.
   - Los atributos `SELLER_PACKAGE_*` son los que documenta ML para cuentas ME2 (obligatorios para `cross_docking`/`xd_drop_off`, aceptados en el resto).
+  - **Alcance: siempre a nivel ítem (MLA), no por variacion**. Según la doc de ML, los `SELLER_PACKAGE_*` se declaran en cada publicación y no están tageados como `variation_attribute` en ninguna categoría visible. Testeos empíricos confirmaron que intentar subirlos a nivel variación genera errores recurrentes (`cause 146` de duplicación ítem↔variación, `cause 161` "invalid in variation attributes for category"). Por eso el PUT siempre es `PUT /items/{id}` con `{"attributes":[4 SELLER_PACKAGE_*]}` sin wrapper `variations`.
+  - **Consecuencia para MLAs con variaciones**: todas las variaciones del mismo MLA comparten estas 4 medidas. Si tu Excel tiene varias filas cuyo SKU mapea al mismo MLA (ej: talles S/M/L distintos), la última que se procese define el valor final a nivel ítem. Esto alinea con el modelo que ML ofrece hoy para `SELLER_PACKAGE_*`.
 
 ### Pedidos
 
