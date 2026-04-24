@@ -32,6 +32,7 @@
                     <TextField fx:id="medidasExcelField" HBox.hgrow="ALWAYS" editable="false"
                                promptText="Medidas de embalaje por SKU (.xlsx)"/>
                     <Button fx:id="medidasSelectBtn" text="&#x1F4C2; Seleccionar" onAction="#onSelectMedidasExcelFile"/>
+                    <Button fx:id="subirMedidasBtn" text="&#x2B06; Subir Medidas" onAction="#onSubirMedidas" disable="true"/>
                     <Label fx:id="medidasStatusLabel" text="" style="-fx-font-size: 12px; -fx-cursor: hand;" onMouseClicked="#onMedidasStatusClicked"/>
                 </HBox>
             </VBox>

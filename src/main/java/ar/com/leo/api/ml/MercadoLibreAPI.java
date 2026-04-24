@@ -851,6 +851,79 @@ public class MercadoLibreAPI {
         return new UploadResult(false, itemId, extraerMensajeError(status, response.body()));
     }
 
+    /**
+     * GET /items/{id}?include_attributes=all — devuelve el JSON crudo del ítem incluyendo
+     * attributes[] de cada variación. Útil para debug/inspección.
+     */
+    public static String obtenerItemJson(String itemId) {
+        verificarTokens();
+        Supplier<HttpRequest> req = () -> HttpRequest.newBuilder()
+                .uri(URI.create("https://api.mercadolibre.com/items/" + itemId + "?include_attributes=all"))
+                .header("Authorization", "Bearer " + tokens.accessToken)
+                .GET()
+                .build();
+        HttpResponse<String> response = retryHandler.sendWithRetry(req);
+        if (response == null) return null;
+        if (response.statusCode() != 200) {
+            return "HTTP " + response.statusCode() + " — " + response.body();
+        }
+        return response.body();
+    }
+
+    /**
+     * GET /user-products/{up_id} — devuelve el JSON del User Product (modelo nuevo).
+     */
+    public static String obtenerUserProductJson(String userProductId) {
+        verificarTokens();
+        Supplier<HttpRequest> req = () -> HttpRequest.newBuilder()
+                .uri(URI.create("https://api.mercadolibre.com/user-products/" + userProductId))
+                .header("Authorization", "Bearer " + tokens.accessToken)
+                .GET()
+                .build();
+        HttpResponse<String> response = retryHandler.sendWithRetry(req);
+        if (response == null) return null;
+        if (response.statusCode() != 200) {
+            return "HTTP " + response.statusCode() + " — " + response.body();
+        }
+        return response.body();
+    }
+
+    /**
+     * GET /sites/{site}/user-products-families/{family_id} — devuelve la familia completa de UPs.
+     */
+    public static String obtenerFamilyJson(String siteId, String familyId) {
+        verificarTokens();
+        Supplier<HttpRequest> req = () -> HttpRequest.newBuilder()
+                .uri(URI.create("https://api.mercadolibre.com/sites/" + siteId + "/user-products-families/" + familyId))
+                .header("Authorization", "Bearer " + tokens.accessToken)
+                .GET()
+                .build();
+        HttpResponse<String> response = retryHandler.sendWithRetry(req);
+        if (response == null) return null;
+        if (response.statusCode() != 200) {
+            return "HTTP " + response.statusCode() + " — " + response.body();
+        }
+        return response.body();
+    }
+
+    /**
+     * GET /users/{user_id} — útil para ver tags como "user_product_seller".
+     */
+    public static String obtenerUserJson(String userId) {
+        verificarTokens();
+        Supplier<HttpRequest> req = () -> HttpRequest.newBuilder()
+                .uri(URI.create("https://api.mercadolibre.com/users/" + userId))
+                .header("Authorization", "Bearer " + tokens.accessToken)
+                .GET()
+                .build();
+        HttpResponse<String> response = retryHandler.sendWithRetry(req);
+        if (response == null) return null;
+        if (response.statusCode() != 200) {
+            return "HTTP " + response.statusCode() + " — " + response.body();
+        }
+        return response.body();
+    }
+
     private static HttpResponse<String> ejecutarPut(String itemId, String body) {
         Supplier<HttpRequest> requestBuilder = () -> HttpRequest.newBuilder()
                 .uri(URI.create("https://api.mercadolibre.com/items/" + itemId))

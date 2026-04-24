@@ -13,7 +13,7 @@ Tres selectores de archivo persistentes (guardados en `Preferences`) disponibles
   | # | Columna | Uso |
   |---|---|---|
   | 0 | `SKU` | Clave. |
-  | 1 | `PRODUCTO` | Descripcion. Se auto-rellena con la descripcion del ZPL. |
+  | 1 | `PRODUCTO` | Descripcion del producto. La app no escribe esta columna: usualmente se delega a una formula del usuario (ej: `=BUSCARX(A2;Hoja2!A:A;Hoja2!B:B)`) que la resuelve automaticamente al escribir el SKU. |
   | 2 | `Ancho cm` | Medida real (base). |
   | 3 | `Alto cm` | Medida real (base). |
   | 4 | `Profundidad cm` | Medida real (base). |
@@ -26,7 +26,7 @@ Tres selectores de archivo persistentes (guardados en `Preferences`) disponibles
   | 11 | `ERROR` | Mensaje de ML en rojo cuando falla la subida. Se limpia al pasar a `SUBIDO=SI` en un reintento exitoso. |
 
   - Las 4 columnas base cm/kg son los valores reales medidos por el deposito. Las `+20%` son los valores efectivos declarados a ML (margen por variaciones de armado).
-  - Si el archivo no existe se crea automaticamente con headers en la primera ejecucion. Los SKUs nuevos se appendean al final con celdas faltantes en amarillo y `SUBIDO=NO`.
+  - Si el archivo no existe se crea automaticamente con headers en la primera ejecucion. Los SKUs nuevos se insertan primero en filas con SKU vacio (reutilizando slots pre-cargados con formulas) y si se agotan se appendean al final. En ambos casos las celdas de medidas faltantes quedan en amarillo y `SUBIDO=NO`. Las celdas que contengan una formula se preservan intactas.
   - El lector tolera variantes: "Largo" o "Profundidad", espacios y saltos de linea dentro del header, y el typo "Profunidad" en la columna +20%.
   - Si el archivo existente no tiene columna `ERROR`, se agrega automaticamente en la primera escritura (migracion silenciosa).
   - Con el checkbox desactivado se saltea el marcado MEDIR y la subida a ML.
@@ -80,19 +80,23 @@ Dos sub-pestañas para obtener etiquetas ZPL, procesarlas y enviarlas a la impre
 - **Interleave para impresion**: reordena las etiquetas para compensar el plegado en acordeon de la impresora termica, de modo que al cortar el stack queden en orden.
 - **Impresion directa**: dialog de seleccion de zonas a imprimir + seleccion de impresora. Envia ZPL crudo via `javax.print`.
 - **Combos**: muestra desglose de productos compuestos presentes en el lote para facilitar el armado.
-- **Marcado MEDIR y subida automatica a ML**: si esta configurado el Excel de medidas, al procesar un lote de etiquetas se disparan tres acciones:
+- **Marcado MEDIR y autocarga al Excel** (durante la descarga/procesamiento de etiquetas): si esta configurado el Excel de medidas:
   1. **Banner MEDIR en la etiqueta**: cada etiqueta individual (no CARROS) con SKU numerico, **de pedido de 1 unidad**, cuyo SKU no tenga las 4 columnas base cm/kg cargadas, recibe un banner "MEDIR: [SKU]" en negro invertido sobre el encabezado. Las ordenes de 2+ unidades no se marcan (esos embalajes se miden aparte).
-  2. **Autocarga al Excel**: los SKU detectados como pendientes se agregan al final del Excel con la descripcion del producto pre-rellenada, celdas de medidas en amarillo tenue y `SUBIDO=NO`. No se duplican si ya existen.
-  3. **Subida automatica a ML** (thread de background, sin bloquear la UI): recorre el Excel, filtra filas con `SUBIDO=NO` **y** las 4 columnas `+20%` completas, y para cada una:
+  2. **Autocarga al Excel**: los SKU detectados como pendientes se insertan en el Excel con SUBIDO=NO. El inserter primero **reusa filas pre-existentes con SKU vacio** (tipicamente filas con formulas pre-cargadas, ej: `=BUSCARX(...)` en PRODUCTO o `=base*1.2` en las +20%) y recien appendea al final cuando se agotan. Preserva todas las formulas existentes (celdas tipo FORMULA se dejan intactas; Excel las recalcula al abrir gracias a `setForceFormulaRecalculation(true)`). **No escribe la columna PRODUCTO**: queda delegada a la formula que el usuario tenga configurada. No se duplican si el SKU ya existe.
+  3. **Mensaje de pendientes al finalizar**: al terminar la descarga se abre un dialogo scrollable con la cantidad de SKUs sin medidas detectados en el lote, cuantos se agregaron efectivamente al Excel y cuantos ya figuraban, ademas del listado de SKUs.
+  - Durante la descarga **no** se sube nada a ML: el flujo de descarga solo marca y escribe en el Excel.
+
+- **Subida manual a ML** (boton "⬆ Subir Medidas" al lado del selector del Excel de medidas): la subida a ML es una accion independiente, disparada a demanda. Requisitos para que el boton este habilitado: checkbox activo + archivo existente. El handler valida ademas que la sesion ML este inicializada.
+  - Al ejecutarse, recorre el Excel, filtra filas con `SUBIDO=NO` **y** las 4 columnas `+20%` completas, y para cada una:
      - Resuelve `SKU → item_id` via `GET /users/{uid}/items/search?seller_sku=...` con fallback a `?sku=...`.
      - Hace `PUT /items/{item_id}` con body `{"attributes":[...]}` y los 4 atributos `SELLER_PACKAGE_WIDTH`, `SELLER_PACKAGE_HEIGHT`, `SELLER_PACKAGE_LENGTH`, `SELLER_PACKAGE_WEIGHT`. Formato requerido por ML: enteros, `cm` para dimensiones, `g` para peso. El codigo convierte `kg × 1000 → g` y redondea con `Math.round` (evita sesgo de truncado y el ruido de floats de Excel).
      - Si HTTP 200/201, marca `SUBIDO=SI` en verde tenue y limpia la celda `ERROR`. Si falla, deja `SUBIDO=NO` (rojo) y escribe el mensaje parseado en la columna `ERROR` (rojo oscuro sobre rosa palido, con wrap).
      - Parseo del error: del JSON de ML se extrae `cause[0].cause_id` + `cause[0].message` para dejar un mensaje legible (ej: `HTTP 400 · 5401 · The packaging attributes [seller_package_height] are too small for...`). Si no es JSON, se usa el body crudo.
-  - **UI del Paso 2**:
-     - El texto del boton "Descargar Etiquetas" cambia a "Descargar Etiquetas y Subir Medidas" cuando el checkbox esta activo.
-     - El dialogo de confirmacion muestra cuantas medidas pendientes hay para subir ("Se subiran a ML las medidas de N SKU(s) cargadas en el Excel").
+  - **UI**:
+     - Corre en thread de background: el boton se deshabilita mientras dura la subida y se reactiva al finalizar.
      - Un label al lado del selector del Excel muestra el progreso en vivo (`Subiendo 2/5 (OK 1 · FAIL 1)`) y al finalizar resume con icono verde o rojo.
-     - El dialogo con el detalle por SKU se abre automaticamente al finalizar la subida: estilo `ERROR` (icono rojo, texto rojo oscuro monospace) si hubo fallas, `INFORMATION` si fue todo OK. Se puede reabrir haciendo click en el label de estado.
+     - El dialogo con el detalle por SKU se abre automaticamente al finalizar: estilo `ERROR` (icono rojo, texto rojo oscuro monospace) si hubo fallas, `INFORMATION` si fue todo OK. Se puede reabrir haciendo click en el label de estado.
+     - Si no hay pendientes para subir, se informa con un dialogo en lugar de subir nada.
   - Los atributos `SELLER_PACKAGE_*` son los que documenta ML para cuentas ME2 (obligatorios para `cross_docking`/`xd_drop_off`, aceptados en el resto).
   - **Alcance: siempre a nivel ítem (MLA), no por variacion**. Según la doc de ML, los `SELLER_PACKAGE_*` se declaran en cada publicación y no están tageados como `variation_attribute` en ninguna categoría visible. Testeos empíricos confirmaron que intentar subirlos a nivel variación genera errores recurrentes (`cause 146` de duplicación ítem↔variación, `cause 161` "invalid in variation attributes for category"). Por eso el PUT siempre es `PUT /items/{id}` con `{"attributes":[4 SELLER_PACKAGE_*]}` sin wrapper `variations`.
   - **Consecuencia para MLAs con variaciones**: todas las variaciones del mismo MLA comparten estas 4 medidas. Si tu Excel tiene varias filas cuyo SKU mapea al mismo MLA (ej: talles S/M/L distintos), la última que se procese define el valor final a nivel ítem. Esto alinea con el modelo que ML ofrece hoy para `SELLER_PACKAGE_*`.
