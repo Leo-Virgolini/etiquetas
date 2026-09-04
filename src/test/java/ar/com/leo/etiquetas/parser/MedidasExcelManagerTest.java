@@ -36,18 +36,14 @@ class MedidasExcelManagerTest {
 
     /** Columnas base, sin ninguna de las de embalaje. */
     private static final String[] HEADERS_BASE = {
-            "SKU", "PRODUCTO", "Ancho\ncm", "Alto\ncm", "Profundidad\ncm",
-            "Peso físico\n(empaque + producto)\nkg",
-            "Ancho +20%", "Alto +20%", "Profunidad +20%",
-            "Peso físico (empaque + producto) +20%", "SUBIDO", "ERROR"
+            "SKU", "PRODUCTO", "Largo\ncm", "Ancho\ncm", "Alto\ncm", "Peso\nkg",
+            "Largo", "Ancho", "Alto +10%", "Peso +10%", "SUBIDO", "ERROR"
     };
 
     /** Columnas base más las ocho de embalaje entre SUBIDO y ERROR, como las carga el usuario. */
     private static final String[] HEADERS_CON_EMBALAJE = {
-            "SKU", "PRODUCTO", "Ancho\ncm", "Alto\ncm", "Profundidad\ncm",
-            "Peso físico\n(empaque + producto)\nkg",
-            "Ancho +20%", "Alto +20%", "Profunidad +20%",
-            "Peso físico (empaque + producto) +20%", "SUBIDO",
+            "SKU", "PRODUCTO", "Largo\ncm", "Ancho\ncm", "Alto\ncm", "Peso\nkg",
+            "Largo", "Ancho", "Alto +10%", "Peso +10%", "SUBIDO",
             "ESTANDARIZADO", "ENVASE",
             "TIPO DE ROLLO", "CANT PAÑOS", "OBSERVACIONES",
             "ERROR"
@@ -108,15 +104,39 @@ class MedidasExcelManagerTest {
     }
 
     @Test
-    void elPesoConMargenDeCincoPorCientoNoSeConfundeConElPesoBase() throws Exception {
-        // El encabezado del peso base tambien tiene un "+": "(empaque + producto)".
-        String[] headers = {
-                "SKU", "PRODUCTO",
-                "Peso físico (empaque + producto) kg",
-                "Peso físico (empaque + producto) +5%",
-                "SUBIDO"
-        };
-        Path excel = crearExcel("peso-5.xlsx", headers, new String[]{"1241212", "Producto A"});
+    void elPesoConUnidadEsLaBaseYElPesoConMargenEsElQueSePublica() throws Exception {
+        String[] headers = {"SKU", "PRODUCTO", "Peso\nkg", "Peso +10%", "SUBIDO"};
+        Path excel = crearExcel("peso.xlsx", headers, new String[]{"1241212", "Producto A"});
+        escribirNumero(excel, 1, 2, 0.8);
+        escribirNumero(excel, 1, 3, 0.88);
+
+        MedidaSku medida = manager.leerMedidas(excel).porSku().get("1241212");
+
+        assertEquals(0.8, medida.pesoKg());
+        assertEquals(0.88, medida.pesoMasKg());
+    }
+
+    @Test
+    void cambiarElPorcentajeDelMargenNoDejaLaColumnaSinReconocer() throws Exception {
+        // El numero del margen es del usuario: si pasa de +10% a +15% la columna sigue siendo la
+        // misma. Lo que no puede cambiar es el nombre del eje.
+        String[] headers = {"SKU", "PRODUCTO", "Alto\ncm", "Alto +15%", "SUBIDO"};
+        Path excel = crearExcel("margen-distinto.xlsx", headers, new String[]{"1241212", "Producto A"});
+        escribirNumero(excel, 1, 2, 10);
+        escribirNumero(excel, 1, 3, 11.5);
+
+        MedidaSku medida = manager.leerMedidas(excel).porSku().get("1241212");
+
+        assertEquals(10.0, medida.altoCm());
+        assertEquals(11.5, medida.altoMasCm());
+    }
+
+    @Test
+    void laUnidadEntreParentesisNoConfundeLaColumnaQueSePublica() throws Exception {
+        // Encabezado real del Excel: "Peso +5% (KG)". Lleva la unidad igual que la medida del
+        // depósito, así que sin mirar el margen se la tomaría por la columna base.
+        String[] headers = {"SKU", "PRODUCTO", "Peso\nkg", "Peso +5% (KG)", "SUBIDO"};
+        Path excel = crearExcel("peso-parentesis.xlsx", headers, new String[]{"1241212", "Producto A"});
         escribirNumero(excel, 1, 2, 0.8);
         escribirNumero(excel, 1, 3, 0.84);
 
@@ -124,6 +144,21 @@ class MedidasExcelManagerTest {
 
         assertEquals(0.8, medida.pesoKg());
         assertEquals(0.84, medida.pesoMasKg());
+        assertFalse(manager.leerMedidas(excel).columnasAPublicarFaltantes().contains("Peso"),
+                "la columna del peso a publicar está, aunque lleve la unidad");
+    }
+
+    @Test
+    void unEncabezadoDescriptivoNoSeTomaComoMedida() throws Exception {
+        // Los encabezados de medidas son fijos. Uno propio del usuario, por descriptivo que sea,
+        // no se adivina: se avisa que la columna falta en vez de publicar el dato equivocado.
+        String[] headers = {"SKU", "PRODUCTO", "Peso físico (empaque + producto) kg", "SUBIDO"};
+        Path excel = crearExcel("descriptivo.xlsx", headers, new String[]{"1241212", "Producto A"});
+        escribirNumero(excel, 1, 2, 0.8);
+
+        MedidaSku medida = manager.leerMedidas(excel).porSku().get("1241212");
+
+        assertNull(medida.pesoKg());
     }
 
     @Test
@@ -167,10 +202,8 @@ class MedidasExcelManagerTest {
     void lasColumnasSeUbicanPorHeaderNoPorPosicion() throws Exception {
         // Mismo contenido pero con las columnas de embalaje en otro orden y al final.
         String[] headers = {
-                "SKU", "PRODUCTO", "Ancho\ncm", "Alto\ncm", "Profundidad\ncm",
-                "Peso físico\n(empaque + producto)\nkg",
-                "Ancho +20%", "Alto +20%", "Profunidad +20%",
-                "Peso físico (empaque + producto) +20%", "SUBIDO", "ERROR",
+                "SKU", "PRODUCTO", "Largo\ncm", "Ancho\ncm", "Alto\ncm", "Peso\nkg",
+                "Largo", "Ancho", "Alto +10%", "Peso +10%", "SUBIDO", "ERROR",
                 "OBSERVACIONES", "ENVASE", "TIPO DE ROLLO"
         };
         Path excel = crearExcel("desordenado.xlsx", headers,
@@ -296,8 +329,9 @@ class MedidasExcelManagerTest {
     }
 
     @Test
-    void unaMedidaQueMencionaElEnvaseNoSeConfundeConLaColumnaDeEnvase() throws Exception {
-        // "Ancho caja cm" es un nombre natural: lo que se mide es la caja.
+    void unaColumnaPropiaQueMencionaUnEjeNoSeTomaComoMedida() throws Exception {
+        // "Ancho envase cm" es un nombre natural para una columna del usuario, pero no es el
+        // encabezado de la medida: se deja afuera en vez de publicar en ML el ancho del envase.
         String[] headers = {"SKU", "PRODUCTO", "Ancho envase cm", "Alto del envase", "SUBIDO", "ENVASE"};
         Path excel = crearExcel("medida-envase.xlsx", headers,
                 new String[]{"1241212", "Producto A", "", "", "NO", "BOL-1"});
@@ -306,20 +340,18 @@ class MedidasExcelManagerTest {
 
         MedidaSku medida = manager.leerMedidas(excel).porSku().get("1241212");
 
-        assertEquals(30.0, medida.anchoCm(), "la medida no debe ir a parar a la columna de envase");
-        assertEquals(20.0, medida.altoCm());
-        assertEquals("BOL-1", medida.embalaje().envase());
+        assertNull(medida.anchoCm(), "no es la columna de ancho");
+        assertNull(medida.altoCm());
+        assertEquals("BOL-1", medida.embalaje().envase(), "la columna de envase se sigue leyendo");
     }
 
     @Test
     void agregarPendientesUbicaLasColumnasPorHeader() throws Exception {
-        // Columnas de embalaje intercaladas antes de las +20%, como habilita el README.
+        // Columnas de embalaje intercaladas antes de las que se publican, como habilita el README.
         String[] headers = {
-                "SKU", "PRODUCTO", "Ancho\ncm", "Alto\ncm", "Profundidad\ncm",
-                "Peso físico\n(empaque + producto)\nkg",
+                "SKU", "PRODUCTO", "Largo\ncm", "Ancho\ncm", "Alto\ncm", "Peso\nkg",
                 "ENVASE", "TIPO DE ROLLO", "CANT PAÑOS",
-                "Ancho +20%", "Alto +20%", "Profunidad +20%",
-                "Peso físico (empaque + producto) +20%", "SUBIDO", "ERROR"
+                "Largo", "Ancho", "Alto +10%", "Peso +10%", "SUBIDO", "ERROR"
         };
         Path excel = crearExcel("intercaladas.xlsx", headers,
                 new String[]{"", "", "", "", "", "", "BOL-1", "DIAMANTES", "2"});
@@ -336,11 +368,9 @@ class MedidasExcelManagerTest {
     @Test
     void agregarPendientesEscribeElNoEnLaColumnaSubido() throws Exception {
         String[] headers = {
-                "SKU", "PRODUCTO", "Ancho\ncm", "Alto\ncm", "Profundidad\ncm",
-                "Peso físico\n(empaque + producto)\nkg",
+                "SKU", "PRODUCTO", "Largo\ncm", "Ancho\ncm", "Alto\ncm", "Peso\nkg",
                 "N° Bolsa", "Nombre Caja", "N° Caja",
-                "Ancho +20%", "Alto +20%", "Profunidad +20%",
-                "Peso físico (empaque + producto) +20%", "SUBIDO", "ERROR"
+                "Largo", "Ancho", "Alto +10%", "Peso +10%", "SUBIDO", "ERROR"
         };
         Path excel = crearExcel("subido.xlsx", headers, new String[]{"1241212", "Producto A"});
 
@@ -349,7 +379,7 @@ class MedidasExcelManagerTest {
         try (Workbook wb = WorkbookFactory.create(excel.toFile(), null, true)) {
             Row fila = wb.getSheetAt(0).getRow(2);
             assertEquals("NO", fila.getCell(13).getStringCellValue(), "el NO va en SUBIDO");
-            assertEquals(CellType.BLANK, fila.getCell(9).getCellType(), "no en Ancho +20%");
+            assertEquals(CellType.BLANK, fila.getCell(9).getCellType(), "no en la columna del peso a publicar");
         }
     }
 
@@ -388,10 +418,8 @@ class MedidasExcelManagerTest {
     @Test
     void laColumnaErrorSeCreaAlFinalSinPisarColumnasPropias() throws Exception {
         String[] headers = {
-                "SKU", "PRODUCTO", "Ancho\ncm", "Alto\ncm", "Profundidad\ncm",
-                "Peso físico\n(empaque + producto)\nkg",
-                "Ancho +20%", "Alto +20%", "Profunidad +20%",
-                "Peso físico (empaque + producto) +20%", "SUBIDO",
+                "SKU", "PRODUCTO", "Largo\ncm", "Ancho\ncm", "Alto\ncm", "Peso\nkg",
+                "Largo", "Ancho", "Alto +10%", "Peso +10%", "SUBIDO",
                 "ESTANDARIZADO", "ENVASE",
                 "TIPO DE ROLLO", "CANT PAÑOS", "OBSERVACIONES",
                 "MI COLUMNA"
@@ -430,10 +458,8 @@ class MedidasExcelManagerTest {
         // El usuario renombró SUBIDO, así que la app no la reconoce. Escribir el "NO" en el índice
         // 10 caería sobre una de sus columnas de embalaje.
         String[] headers = {
-                "SKU", "PRODUCTO", "Ancho\ncm", "Alto\ncm", "Profundidad\ncm",
-                "Peso físico\n(empaque + producto)\nkg",
-                "Ancho +20%", "Alto +20%", "Profunidad +20%",
-                "Peso físico (empaque + producto) +20%",
+                "SKU", "PRODUCTO", "Largo\ncm", "Ancho\ncm", "Alto\ncm", "Peso\nkg",
+                "Largo", "Ancho", "Alto +10%", "Peso +10%",
                 "ENVASE", "TIPO DE ROLLO", "CANT PAÑOS"
         };
         Path excel = crearExcel("sin-subido.xlsx", headers,
@@ -494,10 +520,8 @@ class MedidasExcelManagerTest {
     void laColumnaErrorSeCreaPegadaALaUltimaEnUnArchivoViejo() throws Exception {
         // Excel anterior a las columnas de embalaje: 11 columnas y sin ERROR.
         String[] headers = {
-                "SKU", "PRODUCTO", "Ancho cm", "Alto cm", "Profundidad cm",
-                "Peso fisico kg",
-                "Ancho +20%", "Alto +20%", "Profunidad +20%",
-                "Peso fisico +20%", "SUBIDO"
+                "SKU", "PRODUCTO", "Largo cm", "Ancho cm", "Alto cm", "Peso kg",
+                "Largo", "Ancho", "Alto +10%", "Peso +10%", "SUBIDO"
         };
         Path excel = crearExcel("legacy.xlsx", headers, new String[]{"1241212", "Producto A"});
 
@@ -574,6 +598,100 @@ class MedidasExcelManagerTest {
         Path excel = tempDir.resolve("nuevo-con-flag.xlsx");
 
         assertTrue(manager.leerMedidas(excel).embalajeEnUso());
+    }
+
+    // -------------------------------------------------------------------------------------------
+    // Encabezados de medidas
+    // -------------------------------------------------------------------------------------------
+
+    @Test
+    void resuelveLasCuatroColumnasQueSePublicanEnMl() throws Exception {
+        // Los encabezados reales del Excel: las de cm/kg son la medida del deposito y las cuatro
+        // siguientes son las que se declaran en ML. Dos de ellas no llevan porcentaje.
+        Path excel = crearExcel("headers-reales.xlsx", HEADERS_CON_EMBALAJE,
+                new String[]{"1241212", "Producto A"});
+        escribirNumero(excel, 1, 2, 30);   // Largo cm
+        escribirNumero(excel, 1, 3, 20);   // Ancho cm
+        escribirNumero(excel, 1, 4, 10);   // Alto cm
+        escribirNumero(excel, 1, 5, 0.8);  // Peso kg
+        escribirNumero(excel, 1, 6, 33);   // Largo
+        escribirNumero(excel, 1, 7, 22);   // Ancho
+        escribirNumero(excel, 1, 8, 11);   // Alto +10%
+        escribirNumero(excel, 1, 9, 0.88); // Peso +10%
+
+        MedidaSku medida = manager.leerMedidas(excel).porSku().get("1241212");
+
+        assertEquals(30.0, medida.profundidadCm(), "Largo cm es la medida del deposito");
+        assertEquals(20.0, medida.anchoCm());
+        assertEquals(10.0, medida.altoCm());
+        assertEquals(0.8, medida.pesoKg());
+        assertEquals(33.0, medida.profundidadMasCm(), "Largo sin porcentaje es la que se publica");
+        assertEquals(22.0, medida.anchoMasCm(), "Ancho sin porcentaje es la que se publica");
+        assertEquals(11.0, medida.altoMasCm());
+        assertEquals(0.88, medida.pesoMasKg());
+        assertTrue(medida.tieneMedidasParaSubir());
+        assertTrue(medida.estaMedido());
+    }
+
+    @Test
+    void avisaCuandoFaltaAlgunaColumnaQueSePublica() throws Exception {
+        // Sin este aviso la subida dice "no hay pendientes" y el problema pasa desapercibido.
+        String[] headers = {"SKU", "PRODUCTO", "Largo cm", "Ancho cm", "Alto cm", "Peso kg",
+                "Alto +10%", "Peso +10%", "SUBIDO", "ERROR"};
+        Path excel = crearExcel("faltan-columnas.xlsx", headers,
+                new String[]{"1241212", "Producto A"});
+
+        assertEquals(List.of("Largo", "Ancho"), manager.leerMedidas(excel).columnasAPublicarFaltantes());
+    }
+
+    @Test
+    void sinColumnasFaltantesElAvisoQuedaVacio() throws Exception {
+        Path excel = crearExcel("completas.xlsx", HEADERS_CON_EMBALAJE,
+                new String[]{"1241212", "Producto A"});
+
+        assertEquals(List.of(), manager.leerMedidas(excel).columnasAPublicarFaltantes());
+    }
+
+    @Test
+    void avisaCuandoFaltaAlgunaColumnaDeMedidaDelDeposito() throws Exception {
+        // El marcado MEDIR sale de estas columnas: si una no se reconoce, ningun SKU figura medido
+        // y el lote entero se reclama sin decir por que.
+        String[] headers = {"SKU", "PRODUCTO", "Largo caja cm", "Ancho cm", "Alto cm", "Peso kg",
+                "Largo", "Ancho", "Alto +10%", "Peso +10%", "SUBIDO", "ERROR"};
+        Path excel = crearExcel("falta-base.xlsx", headers, new String[]{"1241212", "Producto A"});
+
+        assertEquals(List.of("Largo"), manager.leerMedidas(excel).columnasBaseFaltantes());
+    }
+
+    @Test
+    void laColumnaExactaGanaSobreUnaColumnaPropiaQueLaMenciona() throws Exception {
+        // "Ancho envase cm" no es una medida, pero contiene ENVASE. Si se la deja pisar a la
+        // columna ENVASE, la etiqueta imprime un numero como codigo de envase.
+        String[] headers = {"SKU", "PRODUCTO", "SUBIDO", "ENVASE", "Ancho envase cm"};
+        Path excel = crearExcel("envase-pisado.xlsx", headers,
+                new String[]{"1241212", "Producto A", "NO", "BOL-1", ""});
+        escribirNumero(excel, 1, 4, 30);
+
+        MedidaSku medida = manager.leerMedidas(excel).porSku().get("1241212");
+
+        assertEquals("BOL-1", medida.embalaje().envase(), "gana la columna llamada ENVASE");
+        assertNull(medida.anchoCm(), "y la columna propia no se toma como medida");
+    }
+
+    @Test
+    void unaSegundaColumnaDelMismoEjeNoPisaALaPrimera() throws Exception {
+        // Con "Alto +10%" y "Alto" en la misma hoja, ambas son candidatas a publicar. Pisar la
+        // primera mandaria a ML la medida sin margen.
+        String[] headers = {"SKU", "PRODUCTO", "Alto\ncm", "Alto +10%", "Alto", "SUBIDO"};
+        Path excel = crearExcel("alto-duplicado.xlsx", headers, new String[]{"1241212", "Producto A"});
+        escribirNumero(excel, 1, 2, 10);
+        escribirNumero(excel, 1, 3, 11);
+        escribirNumero(excel, 1, 4, 10);
+
+        MedidaSku medida = manager.leerMedidas(excel).porSku().get("1241212");
+
+        assertEquals(10.0, medida.altoCm());
+        assertEquals(11.0, medida.altoMasCm(), "se publica la del margen, no la que vino después");
     }
 
     // -------------------------------------------------------------------------------------------

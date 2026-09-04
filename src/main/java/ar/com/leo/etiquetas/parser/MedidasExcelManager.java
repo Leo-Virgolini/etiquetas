@@ -15,19 +15,22 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
  * Gestiona el Excel "madre" de medidas de embalaje por SKU:
  *
- *   SKU | PRODUCTO | Largo cm | Ancho cm | Alto cm | Peso físico (empaque + producto) kg
- *       | Largo +20% | Ancho +20% | Alto +20% | Peso físico (empaque + producto) +5%
+ *   SKU | PRODUCTO | Largo cm | Ancho cm | Alto cm | Peso kg
+ *       | Largo | Ancho | Alto +10% | Peso +10%
  *       | SUBIDO | ESTANDARIZADO | ENVASE | TIPO DE ROLLO | CANT PAÑOS | OBSERVACIONES | ERROR
  *
- * Las columnas con porcentaje son las que se suben a la API de ML (dims en cm, peso en kg). Todas
- * se ubican por su encabezado, no por posición: el usuario reordena y agrega columnas propias.
+ * Las cuatro con unidad son la medida real del depósito; las cuatro siguientes, el valor efectivo
+ * que se sube a la API de ML (dims en cm, peso en kg). Todas se ubican por su encabezado, no por
+ * posición: el usuario reordena y agrega columnas propias.
  */
 public class MedidasExcelManager {
 
@@ -37,11 +40,11 @@ public class MedidasExcelManager {
             "Largo\ncm",
             "Ancho\ncm",
             "Alto\ncm",
-            "Peso físico\n(empaque + producto)\nkg",
-            "Largo +20%",
-            "Ancho +20%",
-            "Alto +20%",
-            "Peso físico (empaque + producto) +5%",
+            "Peso\nkg",
+            "Largo",
+            "Ancho",
+            "Alto +10%",
+            "Peso +10%",
             "SUBIDO",
             "ESTANDARIZADO",
             "ENVASE",
@@ -51,9 +54,19 @@ public class MedidasExcelManager {
             "ERROR"
     };
 
-    /** Marca una columna de margen: "+20%" en las dimensiones, "+5%" en el peso. */
+    /**
+     * Los cuatro ejes que mide el Excel, para poder nombrar en el aviso el que falte. Se usa el eje
+     * y no el encabezado completo porque el margen del encabezado lo elige el usuario.
+     */
+    public static final String[] EJES = {"Largo", "Ancho", "Alto", "Peso"};
+
+    /**
+     * Margen declarado en el encabezado de una columna a publicar: "+10%", "+5%", "+ 20 %".
+     * Se le quita al encabezado antes de compararlo, para que cambiar el porcentaje no rompa la
+     * resolución de columnas.
+     */
     private static final java.util.regex.Pattern PORCENTAJE =
-            java.util.regex.Pattern.compile("\\+\\s*\\d+\\s*%");
+            java.util.regex.Pattern.compile("\\s*\\+\\s*\\d+\\s*%");
 
     /** Hoja con el catálogo de envases: código en "N°" e inscripción en "INSCRIPCION". */
     public static final String HOJA_ESTANDARIZACION = "ESTANDARIZACION";
@@ -91,11 +104,51 @@ public class MedidasExcelManager {
     }
 
     /**
+     * Una de las ocho columnas de medidas: qué eje mide y si es la que se declara en ML.
+     *
+     * @param eje        LARGO, ANCHO, ALTO o PESO
+     * @param aPublicar  true si es el valor efectivo que va a ML; false si es la medida del depósito
+     */
+    private record Medida(String eje, boolean aPublicar) {
+
+        private static final List<String> EJES = List.of("LARGO", "ANCHO", "ALTO", "PESO");
+
+        /**
+         * Clasifica un encabezado ya normalizado, o devuelve null si no es una columna de medidas.
+         *
+         * La medida del depósito es el eje seguido de su unidad —"LARGO CM", "PESO KG", con la
+         * unidad entre paréntesis o sin ellos—. Todo lo demás que nombre un eje es la que se
+         * publica: "LARGO", "ALTO +10%", "PESO +5% (KG)". El margen no se mira más que para
+         * descartarlo: su porcentaje es del usuario y lo cambia cuando quiere.
+         */
+        static Medida de(String header) {
+            String limpio = header.replace('(', ' ').replace(')', ' ').replaceAll("\\s+", " ").trim();
+            boolean conMargen = PORCENTAJE.matcher(limpio).find();
+            String resto = PORCENTAJE.matcher(limpio).replaceAll(" ").replaceAll("\\s+", " ").trim();
+
+            boolean conUnidad = resto.endsWith(" CM") || resto.endsWith(" KG");
+            String eje = conUnidad ? resto.substring(0, resto.length() - 3).trim() : resto;
+
+            if (!EJES.contains(eje)) return null;
+            // Solo el eje con su unidad y sin margen es la medida real; el resto va a ML.
+            return new Medida(eje, conMargen || !conUnidad);
+        }
+    }
+
+    /**
      * Resuelve las columnas por su encabezado normalizado.
      *
-     * Las de medidas se evalúan antes que las de embalaje: un encabezado como "Ancho caja cm" es
-     * natural —lo que se mide es la caja— y con los patrones de embalaje primero terminaría
-     * asignado a la columna de caja, dejando la dimensión sin leer.
+     * Se resuelve en dos pasadas: primero los nombres que la app define —las ocho de medidas las
+     * clasifica {@link Medida}, el eje con su unidad es la del depósito y sin ella la que se
+     * declara en ML— y después, solo para las ranuras que quedaron vacías, las de embalaje por
+     * coincidencia parcial: son del usuario y las nombra distinto en cada archivo. El orden importa
+     * porque una columna propia puede mencionar un nombre de la app ("Ancho envase cm") y no debe
+     * ganarle a la que se llama exactamente así.
+     *
+     * Antes se tomaba por medida real toda columna sin porcentaje, así que en cuanto el usuario le
+     * sacó el "+20%" al encabezado de Largo y Ancho esas dos pisaron a las de cm y las de publicar
+     * quedaron sin resolver: la subida no encontraba nada que mandar y lo informaba como que no
+     * había pendientes. De ahí que ahora ninguna asignación se pise y que las que falten se avisen.
      */
     private Columnas resolverColumnas(Sheet sheet) {
         int sku = -1, producto = -1;
@@ -111,38 +164,70 @@ public class MedidasExcelManager {
                     -1, -1, -1, -1, -1);
         }
 
-        for (int i = 0; i < header.getLastCellNum(); i++) {
+        int ultima = header.getLastCellNum();
+        String[] headers = new String[Math.max(ultima, 0)];
+        for (int i = 0; i < ultima; i++) {
             Cell cell = header.getCell(i);
-            if (cell == null) continue;
-            String h = normalizarHeader(getCellString(cell));
-            // Las columnas de margen son las que llevan un porcentaje: +20% en las dimensiones y
-            // +5% en el peso. No alcanza con buscar "+": el encabezado del peso base es
-            // "Peso físico (empaque + producto) kg" y también lo tiene.
-            boolean mas20 = PORCENTAJE.matcher(h).find();
+            headers[i] = cell == null ? null : normalizarHeader(getCellString(cell));
+        }
+        boolean[] tomada = new boolean[headers.length];
+
+        // Primera pasada: los nombres que la app define. Van antes que la búsqueda parcial para que
+        // una columna propia del usuario que mencione uno de ellos —"Ancho envase cm"— no le gane a
+        // la columna que se llama exactamente así.
+        for (int i = 0; i < headers.length; i++) {
+            String h = headers[i];
+            if (h == null) continue;
+            Medida medida = Medida.de(h);
 
             if (h.equals("SKU")) sku = i;
-            else if (h.startsWith("PRODUCTO")) producto = i;
+            else if (h.equals("PRODUCTO")) producto = i;
             else if (h.equals("SUBIDO")) subido = i;
             else if (h.equals("ERROR")) error = i;
-            else if (h.startsWith("ESTANDARIZ")) estandarizado = i;
-            else if (h.startsWith("ANCHO")) {
-                if (mas20) anchoMas = i; else ancho = i;
+            else if (h.equals("ESTANDARIZADO")) estandarizado = i;
+            else if (h.equals("ENVASE")) envase = i;
+            else if (h.equals("TIPO DE ROLLO")) rollo = i;
+            else if (h.equals("CANT PAÑOS") || h.equals("CANT PANOS")) panos = i;
+            else if (h.equals("OBSERVACIONES")) observaciones = i;
+            else if (medida != null) {
+                boolean aML = medida.aPublicar();
+                switch (medida.eje()) {
+                    case "LARGO" -> {
+                        if (aML) profundidadMas = primera(profundidadMas, i, h);
+                        else profundidad = primera(profundidad, i, h);
+                    }
+                    case "ANCHO" -> {
+                        if (aML) anchoMas = primera(anchoMas, i, h);
+                        else ancho = primera(ancho, i, h);
+                    }
+                    case "ALTO" -> {
+                        if (aML) altoMas = primera(altoMas, i, h);
+                        else alto = primera(alto, i, h);
+                    }
+                    case "PESO" -> {
+                        if (aML) pesoMas = primera(pesoMas, i, h);
+                        else peso = primera(peso, i, h);
+                    }
+                    default -> throw new IllegalStateException("Eje sin columna: " + medida.eje());
+                }
             }
-            else if (h.startsWith("ALTO")) {
-                if (mas20) altoMas = i; else alto = i;
-            }
-            else if (h.startsWith("PROFUN") || h.startsWith("LARGO")) {
-                if (mas20) profundidadMas = i; else profundidad = i;
-            }
-            else if (h.startsWith("PESO")) {
-                if (mas20) pesoMas = i; else peso = i;
-            }
-            // Columnas de embalaje.
-            else if (h.contains("ENVASE")) envase = i;
-            else if (h.contains("ROLLO")) rollo = i;
+            else continue;
+            tomada[i] = true;
+        }
+
+        // Segunda pasada: las de embalaje son del usuario y las nombra distinto en cada archivo, así
+        // que se aceptan por coincidencia parcial, pero solo para las ranuras que quedaron vacías.
+        for (int i = 0; i < headers.length; i++) {
+            String h = headers[i];
+            if (h == null || tomada[i]) continue;
+
+            if (producto == -1 && h.startsWith("PRODUCTO")) producto = i;
+            else if (estandarizado == -1 && h.startsWith("ESTANDARIZ")) estandarizado = i;
+            else if (envase == -1 && h.contains("ENVASE")) envase = i;
+            else if (rollo == -1 && h.contains("ROLLO")) rollo = i;
             // El encabezado puede venir con o sin eñe.
-            else if (h.contains("PAÑO") || h.contains("PANO")) panos = i;
-            else if (h.contains("OBSERV")) observaciones = i;
+            else if (panos == -1 && (h.contains("PAÑO") || h.contains("PANO"))) panos = i;
+            else if (observaciones == -1 && h.contains("OBSERV")) observaciones = i;
         }
 
         return new Columnas(sku, producto, ancho, alto, profundidad, peso,
@@ -153,12 +238,22 @@ public class MedidasExcelManager {
     /**
      * Lo que dice el Excel de medidas.
      *
-     * @param porSku        una entrada por fila con SKU cargado
-     * @param embalajeEnUso la hoja tiene la columna ESTANDARIZADO. No se puede deducir de las filas
-     *                      leídas: un archivo recién creado por la app trae la columna y ninguna
-     *                      fila, y ahí es justo donde todos los SKU son nuevos y hay que avisar.
+     * @param porSku                      una entrada por fila con SKU cargado
+     * @param embalajeEnUso               la hoja tiene la columna ESTANDARIZADO. No se puede deducir
+     *                                    de las filas leídas: un archivo recién creado por la app
+     *                                    trae la columna y ninguna fila, y ahí es justo donde todos
+     *                                    los SKU son nuevos y hay que avisar.
+     * @param columnasAPublicarFaltantes  ejes de {@link #EJES} cuya columna a publicar la hoja no
+     *                                    tiene. Sin una de ellas ningún SKU llega a estar completo y
+     *                                    la subida no encuentra nada, así que hay que poder decir
+     *                                    cuál falta en vez de informar que no hay pendientes.
+     * @param columnasBaseFaltantes       ejes cuya columna medida por el depósito no está. De ellas
+     *                                    sale el marcado MEDIR: si falta una, ningún SKU figura
+     *                                    medido y se reclama el lote entero.
      */
-    public record Medidas(Map<String, MedidaSku> porSku, boolean embalajeEnUso) {
+    public record Medidas(Map<String, MedidaSku> porSku, boolean embalajeEnUso,
+                          List<String> columnasAPublicarFaltantes,
+                          List<String> columnasBaseFaltantes) {
     }
 
     public Medidas leerMedidas(Path excelPath) throws Exception {
@@ -172,7 +267,7 @@ public class MedidasExcelManager {
             crearArchivoVacio(excelPath);
             // Se relee el archivo recién creado en vez de dar por sentado lo que tiene: así el
             // flag sale siempre del mismo lugar, los encabezados del archivo.
-            if (!Files.exists(excelPath)) return new Medidas(new LinkedHashMap<>(), false);
+            if (!Files.exists(excelPath)) return new Medidas(new LinkedHashMap<>(), false, List.of(), List.of());
         }
 
         try (OPCPackage pkg = OPCPackage.open(excelPath.toFile(), PackageAccess.READ);
@@ -184,12 +279,12 @@ public class MedidasExcelManager {
     private Medidas leerMedidasDe(Workbook workbook) {
         Map<String, MedidaSku> medidas = new LinkedHashMap<>();
         Sheet sheet = hojaMedidas(workbook);
-        if (sheet == null) return new Medidas(medidas, false);
+        if (sheet == null) return new Medidas(medidas, false, List.of(), List.of());
 
         // Una hoja sin ninguna fila es un archivo recién creado: se devuelve vacío para que
         // agregarPendientes lo inicialice. Si tiene filas pero no encabezados, en cambio, es un
         // archivo equivocado y el error tiene que llegarle al usuario.
-        if (sheet.getPhysicalNumberOfRows() == 0) return new Medidas(medidas, false);
+        if (sheet.getPhysicalNumberOfRows() == 0) return new Medidas(medidas, false, List.of(), List.of());
 
         Columnas cols = resolverColumnas(sheet);
         if (cols.sku() == -1) {
@@ -233,13 +328,53 @@ public class MedidasExcelManager {
                     celda(row, cols.error()),
                     embalaje));
         }
-        return new Medidas(medidas, cols.estandarizado() != -1);
+        List<String> aPublicarFaltantes = columnasAPublicarFaltantes(cols);
+        List<String> baseFaltantes = columnasBaseFaltantes(cols);
+        // Una columna que no se reconoce no rompe nada visible: simplemente deja el dato en null y
+        // el SKU se cae del filtro. Queda en el log para que el síntoma tenga a dónde apuntar.
+        if (!aPublicarFaltantes.isEmpty()) {
+            AppLogger.warn("MEDIDAS - Sin columna a publicar para: " + String.join(", ", aPublicarFaltantes));
+        }
+        if (!baseFaltantes.isEmpty()) {
+            AppLogger.warn("MEDIDAS - Sin columna de medida del deposito para: " + String.join(", ", baseFaltantes));
+        }
+        return new Medidas(medidas, cols.estandarizado() != -1, aPublicarFaltantes, baseFaltantes);
+    }
+
+    /**
+     * Conserva la primera columna que ocupó la ranura. Dos encabezados que caen en la misma —"Alto
+     * +10%" y "Alto" juntos, por ejemplo— serían la misma medida escrita dos veces: quedarse con la
+     * última publicaría en ML el valor de una columna que el usuario no pensó para eso.
+     */
+    private static int primera(int actual, int candidata, String header) {
+        if (actual == -1) return candidata;
+        AppLogger.warn("MEDIDAS - La columna \"" + header + "\" repite una medida ya resuelta; se ignora.");
+        return actual;
+    }
+
+    /** Cuáles de los cuatro ejes que van a ML no tienen su columna en la hoja. */
+    private static List<String> columnasAPublicarFaltantes(Columnas cols) {
+        return ejesSinColumna(cols.profundidadMas(), cols.anchoMas(), cols.altoMas(), cols.pesoMas());
+    }
+
+    /** Cuáles de los cuatro ejes medidos por el depósito no tienen su columna en la hoja. */
+    private static List<String> columnasBaseFaltantes(Columnas cols) {
+        return ejesSinColumna(cols.profundidad(), cols.ancho(), cols.alto(), cols.peso());
+    }
+
+    private static List<String> ejesSinColumna(int largo, int ancho, int alto, int peso) {
+        int[] indices = {largo, ancho, alto, peso};
+        List<String> faltantes = new ArrayList<>();
+        for (int i = 0; i < indices.length; i++) {
+            if (indices[i] == -1) faltantes.add(EJES[i]);
+        }
+        return List.copyOf(faltantes);
     }
 
     /**
      * Inserta los SKUs pendientes que aún no figuran. Reusa primero filas existentes con SKU vacío
-     * (típicamente pre-cargadas con fórmulas tipo =BUSCARX en PRODUCTO o base*1.2 en las +20%) y
-     * si se acaban, appendea al final. Preserva todas las fórmulas existentes. SUBIDO se inicializa a "NO".
+     * (típicamente pre-cargadas con fórmulas tipo =BUSCARX en PRODUCTO o base*1.1 en las que se
+     * publican) y si se acaban, appendea al final. Preserva todas las fórmulas existentes. SUBIDO se inicializa a "NO".
      * No escribe la columna PRODUCTO: queda delegada a la fórmula que el usuario tenga configurada.
      * Devuelve la cantidad de SKUs nuevos agregados.
      */

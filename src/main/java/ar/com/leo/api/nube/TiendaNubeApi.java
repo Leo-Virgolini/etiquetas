@@ -112,8 +112,8 @@ public class TiendaNubeApi {
 
                 if (!tieneFulfillmentUnpacked(order)) continue;
 
-                if (esPickup(order) && tieneNota(order)) {
-                    AppLogger.info("NUBE (" + label + ") - Omitida orden pickup con nota: " + orderNumber);
+                if (esPickup(order) && tieneNotaImpreso(order)) {
+                    AppLogger.info("NUBE (" + label + ") - Omitida orden pickup con nota IMPRESO: " + orderNumber);
                     continue;
                 }
 
@@ -212,8 +212,8 @@ public class TiendaNubeApi {
 
                 if (!tieneFulfillmentUnpacked(order)) continue;
 
-                if (esPickup(order) && tieneNota(order)) {
-                    AppLogger.info("PEDIDOS NUBE (" + label + ") - Omitida orden pickup con nota: " + orderNumber);
+                if (esPickup(order) && tieneNotaImpreso(order)) {
+                    AppLogger.info("PEDIDOS NUBE (" + label + ") - Omitida orden pickup con nota IMPRESO: " + orderNumber);
                     continue;
                 }
 
@@ -400,9 +400,20 @@ public class TiendaNubeApi {
         return false;
     }
 
-    private static boolean tieneNota(JsonNode order) {
-        String nota = order.path("owner_note").asString("").trim();
-        return !nota.isEmpty();
+    /**
+     * Indica si la orden ya fue impresa según la nota del vendedor.
+     * <p>
+     * Solo marca el pedido como ya procesado la nota que dice únicamente "IMPRESO"
+     * (en cualquier combinación de mayúsculas y minúsculas). Cualquier otra nota —avisos
+     * internos, faltantes, o "IMPRESO" con texto adicional— no impide que el pedido entre.
+     */
+    private static boolean tieneNotaImpreso(JsonNode order) {
+        return esNotaImpreso(order.path("owner_note").asString(""));
+    }
+
+    /** Predicado puro sobre el texto de la nota, para poder testearlo sin la API. */
+    static boolean esNotaImpreso(String nota) {
+        return nota != null && nota.trim().equalsIgnoreCase("impreso");
     }
 
     /**

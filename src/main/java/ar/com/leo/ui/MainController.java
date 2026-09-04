@@ -606,7 +606,8 @@ public class MainController {
     }
 
     /**
-     * Sube en background las medidas pendientes (SUBIDO=NO con +20% completas) a ML.
+     * Sube en background las medidas pendientes (SUBIDO=NO con las cuatro columnas que se
+     * publican completas) a ML.
      * Se invoca manualmente desde el botón "Subir Medidas". Actualiza el label de estado,
      * marca los resultados en el Excel y abre un diálogo al finalizar.
      */
@@ -618,16 +619,29 @@ public class MainController {
 
         new Thread(() -> {
             try {
-                Map<String, ar.com.leo.etiquetas.model.MedidaSku> medidas;
+                ar.com.leo.etiquetas.parser.MedidasExcelManager.Medidas medidas;
                 try {
-                    medidas = medidasManager.leerMedidas(Path.of(path)).porSku();
+                    medidas = medidasManager.leerMedidas(Path.of(path));
                 } catch (Exception e) {
                     setMedidasStatus("⚠ Error leyendo Excel", "-fx-text-fill: #b91c1c;", "No se pudo leer el Excel de medidas: " + e.getMessage());
                     Platform.runLater(() -> AlertHelper.showError("Medidas ML", "No se pudo leer el Excel de medidas: " + e.getMessage()));
                     return;
                 }
 
-                List<ar.com.leo.etiquetas.model.MedidaSku> aSubir = medidas.values().stream()
+                // Sin alguna de las columnas que van a ML ningún SKU llega a estar completo: sin este
+                // aviso la subida diría que no hay pendientes y el Excel mal armado pasaría inadvertido.
+                List<String> faltantes = medidas.columnasAPublicarFaltantes();
+                if (!faltantes.isEmpty()) {
+                    String detalle = (faltantes.size() == 1 ? "El Excel no tiene la columna " : "El Excel no tiene las columnas ")
+                            + String.join(", ", faltantes)
+                            + ".\nSon las que se declaran en ML, así que no hay nada para subir.";
+                    AppLogger.warn("MEDIDAS - Faltan columnas a publicar: " + String.join(", ", faltantes));
+                    setMedidasStatus("⚠ Faltan columnas", "-fx-text-fill: #b91c1c;", detalle);
+                    Platform.runLater(() -> AlertHelper.showError("Medidas ML", detalle));
+                    return;
+                }
+
+                List<ar.com.leo.etiquetas.model.MedidaSku> aSubir = medidas.porSku().values().stream()
                         .filter(m -> !m.subido())
                         .filter(ar.com.leo.etiquetas.model.MedidaSku::tieneMedidasParaSubir)
                         .toList();

@@ -17,11 +17,11 @@ Tres selectores de archivo persistentes (guardados en `Preferences`) disponibles
   | 2 | `Largo cm` | Medida real (base). |
   | 3 | `Ancho cm` | Medida real (base). |
   | 4 | `Alto cm` | Medida real (base). |
-  | 5 | `Peso físico (empaque + producto) kg` | Medida real (base). |
-  | 6 | `Largo +20%` | Valor que se sube a ML. |
-  | 7 | `Ancho +20%` | Valor que se sube a ML. |
-  | 8 | `Alto +20%` | Valor que se sube a ML. |
-  | 9 | `Peso físico (empaque + producto) +5%` | Valor que se sube a ML. |
+  | 5 | `Peso kg` | Medida real (base). |
+  | 6 | `Largo` | Valor que se sube a ML. |
+  | 7 | `Ancho` | Valor que se sube a ML. |
+  | 8 | `Alto +10%` | Valor que se sube a ML. |
+  | 9 | `Peso +10%` | Valor que se sube a ML. |
   | 10 | `SUBIDO` | `NO` al agregar (rojo tenue), `SI` al subir OK (verde tenue). |
   | 11 | `ESTANDARIZADO` | `SI`/`NO`, calculado por una formula del usuario: resume si completo envase, tipo de rollo y cantidad de paños. Es la unica fuente de verdad sobre si el embalaje esta cargado. |
   | 12 | `ENVASE` | Codigo del envase (`BOL-1`, `CAJ-1`), o `NO` si el producto no lleva. |
@@ -30,13 +30,13 @@ Tres selectores de archivo persistentes (guardados en `Preferences`) disponibles
   | 15 | `OBSERVACIONES` | Texto libre. |
   | 16 | `ERROR` | Mensaje de ML en rojo cuando falla la subida. Se limpia al pasar a `SUBIDO=SI` en un reintento exitoso. |
 
-  - Las 4 columnas base cm/kg son los valores reales medidos por el deposito. Las columnas con porcentaje (`+20%` en las dimensiones, `+5%` en el peso) son los valores efectivos declarados a ML. Se ubican por ese porcentaje en el encabezado, no por el texto exacto.
+  - Las 4 columnas base cm/kg son los valores reales medidos por el deposito. Las 4 siguientes son los valores efectivos declarados a ML. Los 8 encabezados se reconocen por el eje (`Largo`, `Ancho`, `Alto`, `Peso`): la medida real es el eje seguido de su unidad (`Largo cm`, `Peso kg`) y la que se publica es el mismo eje con el margen o sin nada (`Largo`, `Alto +10%`, `Peso +5% (KG)`). Un encabezado que diga otra cosa no se adivina: la columna queda sin resolver y la app avisa cual falta (en el log al leer, y en pantalla al intentar subir). Dos columnas que caigan en la misma medida no se pisan: vale la primera y la segunda se ignora con un aviso en el log.
   - Si el archivo no existe se crea automaticamente con headers en la primera ejecucion. Los SKUs nuevos se insertan primero en filas con SKU vacio (reutilizando slots pre-cargados con formulas) y si se agotan se appendean al final. En ambos casos las celdas de medidas faltantes quedan en amarillo y `SUBIDO=NO`. Las celdas que contengan una formula se preservan intactas.
-  - El lector tolera variantes: "Largo" o "Profundidad", espacios y saltos de linea dentro del header, y el typo "Profunidad" en la columna +20%.
+  - El lector tolera espacios y saltos de linea dentro del header, mayusculas/minusculas, parentesis alrededor de la unidad, y el numero del margen: `Alto +10%`, `Alto +15%` y `Alto` son la misma columna.
   - Si el archivo existente no tiene columna `ERROR`, se agrega automaticamente en la primera escritura (migracion silenciosa).
-  - Las columnas de embalaje (11 a 15) **las crea y carga el usuario a mano**: la app solo las lee. Se ubican por su encabezado, no por posicion, asi que se pueden reordenar o intercalar columnas propias. Si alguna falta, ese dato no se muestra y el resto sigue funcionando. Solo se crean automaticamente cuando la app genera el archivo desde cero.
+  - Las columnas de embalaje (11 a 15) **las crea y carga el usuario a mano**: la app solo las lee. Se ubican por su encabezado, no por posicion, asi que se pueden reordenar o intercalar columnas propias. El nombre exacto tiene prioridad: una columna propia que mencione uno de estos nombres (`Ancho envase cm`) no le gana a la que se llama exactamente `ENVASE`. Si alguna falta, ese dato no se muestra y el resto sigue funcionando. Solo se crean automaticamente cuando la app genera el archivo desde cero.
   - Escritura serializada con lock interno y reintentos con backoff (500/1000/1500/2000 ms) si el archivo esta abierto en Excel (sharing violation).
-  - Las medidas se leen **solo de celdas numericas**, incluidas las formulas con resultado numerico (que es como estan cargadas las columnas con porcentaje). Un valor escrito como texto —aunque parezca un numero, como `"3,006"`— se ignora y ese SKU no se sube a ML: suele ser un dato mal pegado, y de ahi sale la medida que se publica.
+  - Las medidas se leen **solo de celdas numericas**, incluidas las formulas con resultado numerico (que es como suelen estar cargadas las columnas que se publican). Un valor escrito como texto —aunque parezca un numero, como `"3,006"`— se ignora y ese SKU no se sube a ML: suele ser un dato mal pegado, y de ahi sale la medida que se publica.
   - Si falta la columna `ESTANDARIZADO`, la funcion de embalaje se considera apagada: no se imprimen lineas ni se reclama nada, ni siquiera para los SKU que no figuran en el archivo.
   - Con el checkbox desactivado se saltea el marcado MEDIR, las lineas de embalaje y la subida a ML.
 
@@ -51,7 +51,7 @@ Genera un Excel de picking para el deposito con todos los pedidos pendientes de 
 - **Fuentes de datos**:
   - **ML ready_to_print**: `/orders/search` con `shipping.status=ready_to_ship`, `shipping.substatus=ready_to_print`. Excluye ordenes con tag `delivered`.
   - **ML acuerdo (seller_agreement)**: `/orders/search` con `tags=no_shipping`, `order.status=paid`, ultimos 7 dias. Excluye ordenes entregadas, cumplidas (`fulfilled`) y con notas (`/orders/{id}/notes`).
-  - **TN HOGAR / TN GASTRO**: `/v1/{storeId}/orders` con `payment_status=paid`, `shipping_status=unpacked`, `status=open`. Excluye ordenes pickup con nota del vendedor.
+  - **TN HOGAR / TN GASTRO**: `/v1/{storeId}/orders` con `payment_status=paid`, `shipping_status=unpacked`, `status=open`. Excluye ordenes pickup cuya nota del vendedor sea exactamente "IMPRESO" (mayus o minus); cualquier otra nota no impide que el pedido entre.
   - **Productos manuales**: ingreso directo de SKU + cantidad.
 - **Filtro Despacho ML**: "Hasta hoy" (solo ordenes ML con SLA para hoy o antes) o "Sin limite" (todas las pendientes). Aplica solo a MercadoLibre; las ventas de Tienda Nube se incluyen siempre.
 - **Expansion de combos**: los SKU compuestos se expanden automaticamente en sus componentes con cantidades multiplicadas.
@@ -93,7 +93,7 @@ Dos sub-pestañas para obtener etiquetas ZPL, procesarlas y enviarlas a la impre
 - **Combos**: muestra desglose de productos compuestos presentes en el lote para facilitar el armado.
 - **Marcado MEDIR y autocarga al Excel** (durante la descarga/procesamiento de etiquetas): si esta configurado el Excel de medidas:
   1. **Banner MEDIR en la etiqueta** (*desactivado*): imprimia un banner "MEDIR: [SKU]" en negro invertido sobre el encabezado de cada etiqueta individual de 1 unidad cuyo SKU no tuviera las 4 columnas base cm/kg cargadas. Quedo fuera de uso: el codigo se conserva entero detras de la constante `BANNER_MEDIR` de `MainController`, que alcanza con poner en `true` para que vuelva. La **deteccion** de pendientes sigue activa y es la que alimenta los dos puntos siguientes.
-  2. **Autocarga al Excel**: los SKU que todavia **no tienen fila** en el Excel se insertan con SUBIDO=NO. No mira si el SKU esta medido ni de cuantas unidades es la etiqueta: lo que se crea es la fila donde despues se cargan las medidas y el embalaje, y un SKU que solo sale en etiquetas de 2+ unidades avisa en papel igual. El inserter primero **reusa filas pre-existentes con SKU vacio** (tipicamente filas con formulas pre-cargadas, ej: `=BUSCARX(...)` en PRODUCTO o `=base*1.2` en las +20%) y recien appendea al final cuando se agotan. Preserva todas las formulas existentes (celdas tipo FORMULA se dejan intactas; Excel las recalcula al abrir gracias a `setForceFormulaRecalculation(true)`). **No escribe la columna PRODUCTO**: queda delegada a la formula que el usuario tenga configurada. No se duplican si el SKU ya existe.
+  2. **Autocarga al Excel**: los SKU que todavia **no tienen fila** en el Excel se insertan con SUBIDO=NO. No mira si el SKU esta medido ni de cuantas unidades es la etiqueta: lo que se crea es la fila donde despues se cargan las medidas y el embalaje, y un SKU que solo sale en etiquetas de 2+ unidades avisa en papel igual. El inserter primero **reusa filas pre-existentes con SKU vacio** (tipicamente filas con formulas pre-cargadas, ej: `=BUSCARX(...)` en PRODUCTO o `=base*1.1` en las que se publican) y recien appendea al final cuando se agotan. Preserva todas las formulas existentes (celdas tipo FORMULA se dejan intactas; Excel las recalcula al abrir gracias a `setForceFormulaRecalculation(true)`). **No escribe la columna PRODUCTO**: queda delegada a la formula que el usuario tenga configurada. No se duplican si el SKU ya existe.
   3. **Datos de embalaje en la etiqueta**: cada etiqueta individual (no CARROS) con SKU numerico lleva, en el margen superior derecho, entre 1 y 4 lineas segun lo cargado en el Excel. Aplica igual a las etiquetas turbo, que se tratan como cualquier otra zona.
 
      | Condicion | Linea |
@@ -113,7 +113,7 @@ Dos sub-pestañas para obtener etiquetas ZPL, procesarlas y enviarlas a la impre
   - Durante la descarga **no** se sube nada a ML: el flujo de descarga solo marca y escribe en el Excel.
 
 - **Subida manual a ML** (boton "⬆ Subir Medidas" al lado del selector del Excel de medidas): la subida a ML es una accion independiente, disparada a demanda. Requisitos para que el boton este habilitado: checkbox activo + archivo existente. El handler valida ademas que la sesion ML este inicializada.
-  - Al ejecutarse, recorre el Excel, filtra filas con `SUBIDO=NO` **y** las 4 columnas de margen (`+20%` en las dimensiones, `+5%` en el peso) cargadas como numero y mayores a cero, y para cada una:
+  - Al ejecutarse, recorre el Excel, filtra filas con `SUBIDO=NO` **y** las 4 columnas que se publican (`Largo`, `Ancho`, `Alto +10%`, `Peso +10%`) cargadas como numero y mayores a cero, y para cada una:
      - Resuelve `SKU → item_id` via `GET /users/{uid}/items/search?seller_sku=...` con fallback a `?sku=...`.
      - Hace `PUT /items/{item_id}` con body `{"attributes":[...]}` y los 4 atributos `SELLER_PACKAGE_WIDTH`, `SELLER_PACKAGE_HEIGHT`, `SELLER_PACKAGE_LENGTH`, `SELLER_PACKAGE_WEIGHT`. Formato requerido por ML: enteros, `cm` para dimensiones, `g` para peso. El codigo convierte `kg × 1000 → g` y redondea con `Math.round` (evita sesgo de truncado y el ruido de floats de Excel).
      - Si HTTP 200/201, marca `SUBIDO=SI` en verde tenue y limpia la celda `ERROR`. Si falla, deja `SUBIDO=NO` (rojo) y escribe el mensaje parseado en la columna `ERROR` (rojo oscuro sobre rosa palido, con wrap).
@@ -133,7 +133,7 @@ Genera un Excel con tarjetas recortables de todos los pedidos pendientes, listas
 
 - **Fuentes**:
   - **ML retiro**: `/orders/search` con `tags=no_shipping`, `order.status=paid`, ultimos 7 dias. Excluye ordenes entregadas, cumplidas (`fulfilled`) y con notas. Obtiene nombre, apellido y nickname del comprador via GET `/orders/{orderId}` en paralelo (el search solo devuelve `buyer.id` y `nickname`, el GET directo agrega `first_name` y `last_name`).
-  - **TN HOGAR / TN GASTRO**: `/v1/{storeId}/orders` con `payment_status=paid`, `shipping_status=unpacked`, `status=open`. Excluye ordenes pickup con nota del vendedor. Genera etiquetas LLEGA HOY para envios que contengan "LLEGA HOY" en el nombre (excepto Zippin).
+  - **TN HOGAR / TN GASTRO**: `/v1/{storeId}/orders` con `payment_status=paid`, `shipping_status=unpacked`, `status=open`. Excluye ordenes pickup cuya nota del vendedor sea exactamente "IMPRESO" (mayus o minus); cualquier otra nota no impide que el pedido entre. Genera etiquetas LLEGA HOY para envios que contengan "LLEGA HOY" en el nombre (excepto Zippin).
 - **Excel generado** (`Pedidos/PEDIDOS_*.xlsx`) con hasta 3 hojas:
 
 #### ML PEDIDOS RETIRO (violeta)
